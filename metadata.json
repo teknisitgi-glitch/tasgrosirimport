@@ -1,0 +1,6 @@
+{
+  "name": "Tas Grosir Import (TGI)",
+  "description": "Aplikasi e-commerce modern untuk Tas Grosir Import (TGI) dengan katalog produk dinamis, keranjang belanja, checkout WhatsApp otomatis, dan panel manajemen admin.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
