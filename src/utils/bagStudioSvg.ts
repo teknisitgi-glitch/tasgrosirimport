@@ -273,96 +273,259 @@ export function createBagStudioSvg(options: {
   return svgToDataUri(svg);
 }
 
-export function createHeroLookbookSvg(slideIndex: 0 | 1 | 2): string {
-  const configs = [
-    {
-      bg1: '#09090B',
-      bg2: '#18181B',
-      accent: '#FACC15',
-      kicker: 'TGI OFFICIAL WAREHOUSE · BATCH 2026',
-      code: 'BP-MY-00513 / HB-WQ-10670',
-    },
-    {
-      bg1: '#1C1917',
-      bg2: '#292524',
-      accent: '#FACC15',
-      kicker: 'GROSIR TANGAN PERTAMA · RESELLER READY',
-      code: 'MIX SKU MIN. 6 PCS',
-    },
-    {
-      bg1: '#0F172A',
-      bg2: '#1E293B',
-      accent: '#FACC15',
-      kicker: 'URBAN & EXECUTIVE IMPORT COLLECTION',
-      code: 'SG-MY-00813 SERIES',
-    },
-  ];
-  const c = configs[slideIndex];
+/**
+ * Generates a color-matched Studio SVG for any product and color name so
+ * clicking a color dot on a ProductCard immediately updates the product photo
+ * to match the selected color variant.
+ */
+export function createColorMatchedBagSvg(options: {
+  category: 'Backpack' | 'Handbag' | 'Shoulder Bag' | 'Promo Grosir';
+  sku: string;
+  colorName: string;
+}): string {
+  const { category, sku, colorName } = options;
+  const lower = (colorName || '').trim().toLowerCase();
 
+  let primary = '#18181B';
+  let secondary = '#09090B';
+  let highlight = '#3F3F46';
+  let hardware = '#EAB308';
+  let bgTop = '#F4F4F5';
+  let bgBottom = '#E4E4E7';
+  let pedestal = '#FAFAFA';
+  let pedestalSide = '#D4D4D8';
+
+  if (
+    lower.includes('cream') ||
+    lower.includes('krem') ||
+    lower.includes('ivory') ||
+    lower.includes('oat') ||
+    lower.includes('white') ||
+    lower.includes('putih')
+  ) {
+    primary = '#E7E0D6';
+    secondary = '#C7B299';
+    highlight = '#F7F4EF';
+    hardware = '#D97706';
+    bgTop = '#F5F3EF';
+    bgBottom = '#E6E1DA';
+    pedestal = '#FFFFFF';
+    pedestalSide = '#D6CFC5';
+  } else if (
+    lower.includes('mocca') ||
+    lower.includes('moka') ||
+    lower.includes('mocha') ||
+    lower.includes('taupe') ||
+    lower.includes('khaki') ||
+    lower.includes('sand') ||
+    lower.includes('beige')
+  ) {
+    primary = '#8C735B';
+    secondary = '#69533E';
+    highlight = '#A88E74';
+    hardware = '#F59E0B';
+    bgTop = '#F7F4EF';
+    bgBottom = '#E8E0D5';
+    pedestal = '#FAF8F5';
+    pedestalSide = '#D6CFC5';
+  } else if (
+    lower.includes('caramel') ||
+    lower.includes('tan') ||
+    lower.includes('camel') ||
+    lower.includes('cognac')
+  ) {
+    primary = '#A45A26';
+    secondary = '#7C4218';
+    highlight = '#C4733B';
+    hardware = '#FBBF24';
+    bgTop = '#F8F5F0';
+    bgBottom = '#EBE3D5';
+    pedestal = '#FCFBF9';
+    pedestalSide = '#DDD4C3';
+  } else if (
+    lower.includes('espresso') ||
+    lower.includes('coffee') ||
+    lower.includes('coklat') ||
+    lower.includes('brown') ||
+    lower.includes('choco')
+  ) {
+    primary = '#432822';
+    secondary = '#2A1713';
+    highlight = '#5E3B33';
+    hardware = '#F59E0B';
+    bgTop = '#F5F2EB';
+    bgBottom = '#E5DEC9';
+    pedestal = '#FAF8F5';
+    pedestalSide = '#D5CBB8';
+  } else if (lower.includes('navy') || lower.includes('dongker') || lower.includes('blue') || lower.includes('biru')) {
+    primary = '#1E293B';
+    secondary = '#0F172A';
+    highlight = '#334155';
+    hardware = '#CBD5E1';
+    bgTop = '#F1F5F9';
+    bgBottom = '#E2E8F0';
+    pedestal = '#F8FAFC';
+    pedestalSide = '#CBD5E1';
+  } else if (
+    lower.includes('olive') ||
+    lower.includes('army') ||
+    lower.includes('sage') ||
+    lower.includes('green') ||
+    lower.includes('hijau')
+  ) {
+    primary = '#364537';
+    secondary = '#222C23';
+    highlight = '#4E6250';
+    hardware = '#EAB308';
+    bgTop = '#F5F5F4';
+    bgBottom = '#E7E5E4';
+    pedestal = '#FAFAF9';
+    pedestalSide = '#D6D3D1';
+  } else if (
+    lower.includes('charcoal') ||
+    lower.includes('grey') ||
+    lower.includes('gray') ||
+    lower.includes('abu') ||
+    lower.includes('silver') ||
+    lower.includes('slate')
+  ) {
+    primary = '#52525B';
+    secondary = '#3F3F46';
+    highlight = '#71717A';
+    hardware = '#E4E4E7';
+    bgTop = '#F4F4F5';
+    bgBottom = '#E4E4E7';
+    pedestal = '#FAFAFA';
+    pedestalSide = '#D4D4D8';
+  } else if (
+    lower.includes('burgundy') ||
+    lower.includes('maroon') ||
+    lower.includes('wine') ||
+    lower.includes('red') ||
+    lower.includes('merah') ||
+    lower.includes('pink') ||
+    lower.includes('rose')
+  ) {
+    primary = '#6B1D2F';
+    secondary = '#4A101D';
+    highlight = '#8B2940';
+    hardware = '#FBBF24';
+    bgTop = '#FAF5F6';
+    bgBottom = '#EFE2E5';
+    pedestal = '#FFFFFF';
+    pedestalSide = '#DEC8CD';
+  }
+
+  let bagShape = '';
+  if (category === 'Backpack') {
+    bagShape = `
+      <path d="M 355 130 C 355 92, 445 92, 445 130" fill="none" stroke="${secondary}" stroke-width="14" stroke-linecap="round"/>
+      <path d="M 278 260 C 250 310, 255 395, 282 425" fill="none" stroke="${secondary}" stroke-width="16" stroke-linecap="round"/>
+      <path d="M 522 260 C 550 310, 545 395, 518 425" fill="none" stroke="${secondary}" stroke-width="16" stroke-linecap="round"/>
+      <rect x="275" y="125" width="250" height="335" rx="48" fill="url(#bagGrad)" stroke="${secondary}" stroke-width="4"/>
+      <path d="M 285 215 Q 400 232 515 215" fill="none" stroke="${hardware}" stroke-width="3" stroke-dasharray="6,4"/>
+      <rect x="305" y="255" width="190" height="168" rx="22" fill="${secondary}" stroke="${highlight}" stroke-width="2.5"/>
+      <rect x="305" y="295" width="190" height="5" fill="${hardware}" opacity="0.85"/>
+      <rect x="342" y="295" width="10" height="24" rx="4" fill="${hardware}"/>
+      <rect x="478" y="208" width="9" height="22" rx="4" fill="${hardware}"/>
+      <rect x="366" y="162" width="68" height="26" rx="4" fill="${secondary}" stroke="${hardware}" stroke-width="1.5"/>
+      <text x="400" y="179" font-family="monospace" font-size="11" font-weight="700" fill="#FAFAFA" text-anchor="middle" letter-spacing="2">TGI·PRO</text>
+      <path d="M 262 325 L 275 315 L 275 425 L 262 415 Z" fill="${secondary}"/>
+      <path d="M 538 325 L 525 315 L 525 425 L 538 415 Z" fill="${secondary}"/>
+    `;
+  } else if (category === 'Handbag') {
+    bagShape = `
+      <path d="M 332 215 C 332 108, 468 108, 468 215" fill="none" stroke="${secondary}" stroke-width="16" stroke-linecap="round"/>
+      <path d="M 348 215 C 348 132, 452 132, 452 215" fill="none" stroke="${primary}" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+      <path d="M 275 215 L 525 215 L 552 448 C 554 460, 544 468, 530 468 L 270 468 C 256 468, 246 460, 248 448 Z" fill="url(#bagGrad)" stroke="${secondary}" stroke-width="4"/>
+      <path d="M 275 215 L 525 215 L 505 312 C 498 325, 302 325, 295 312 Z" fill="${highlight}" opacity="0.45" stroke="${secondary}" stroke-width="2"/>
+      <rect x="384" y="215" width="32" height="135" rx="6" fill="${secondary}"/>
+      <rect x="374" y="302" width="52" height="34" rx="7" fill="${hardware}" stroke="${secondary}" stroke-width="2"/>
+      <circle cx="400" cy="319" r="7" fill="${secondary}"/>
+      <rect x="322" y="205" width="20" height="16" rx="4" fill="${hardware}"/>
+      <rect x="458" y="205" width="20" height="16" rx="4" fill="${hardware}"/>
+      <path d="M 468 220 L 495 305" stroke="${secondary}" stroke-width="5" stroke-linecap="round"/>
+      <polygon points="485,298 512,294 518,332 482,335" fill="${secondary}" stroke="${hardware}" stroke-width="1.5"/>
+    `;
+  } else if (category === 'Shoulder Bag') {
+    bagShape = `
+      <path d="M 255 245 C 260 95, 540 95, 545 245" fill="none" stroke="${secondary}" stroke-width="15" stroke-linecap="round"/>
+      <circle cx="258" cy="248" r="14" fill="none" stroke="${hardware}" stroke-width="6"/>
+      <circle cx="542" cy="248" r="14" fill="none" stroke="${hardware}" stroke-width="6"/>
+      <path d="M 242 248 Q 400 315 558 248 C 578 365, 515 462, 400 462 C 285 462, 222 365, 242 248 Z" fill="url(#bagGrad)" stroke="${secondary}" stroke-width="4"/>
+      <path d="M 262 274 Q 400 332 538 274 C 552 362, 495 442, 400 442 C 305 442, 248 362, 262 274 Z" fill="none" stroke="${highlight}" stroke-width="2" stroke-dasharray="7,5"/>
+      <rect x="372" y="338" width="56" height="22" rx="4" fill="${hardware}"/>
+      <text x="400" y="353" font-family="sans-serif" font-size="10" font-weight="800" fill="#18181B" text-anchor="middle" letter-spacing="1.5">TGI</text>
+    `;
+  } else {
+    bagShape = `
+      <rect x="190" y="170" width="165" height="260" rx="32" fill="${primary}" stroke="${highlight}" stroke-width="3"/>
+      <rect x="212" y="275" width="120" height="115" rx="16" fill="${secondary}" stroke="${hardware}" stroke-width="2"/>
+      <path d="M 435 255 Q 535 300 625 255 C 638 345, 595 430, 530 430 C 465 430, 422 345, 435 255 Z" fill="${highlight}" stroke="${secondary}" stroke-width="3"/>
+      <path d="M 335 225 C 335 140, 445 140, 445 225" fill="none" stroke="${secondary}" stroke-width="13"/>
+      <path d="M 290 225 L 490 225 L 512 455 L 268 455 Z" fill="url(#bagGrad)" stroke="${secondary}" stroke-width="4"/>
+      <rect x="368" y="305" width="44" height="28" rx="6" fill="${hardware}"/>
+    `;
+  }
+
+  const cleanColorUpper = (colorName || 'DEFAULT').toUpperCase().slice(0, 22);
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 640" width="1440" height="640">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
       <defs>
-        <linearGradient id="heroBg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${c.bg1}"/>
-          <stop offset="100%" stop-color="${c.bg2}"/>
+        <linearGradient id="studioBg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${bgTop}"/>
+          <stop offset="100%" stop-color="${bgBottom}"/>
         </linearGradient>
-        <radialGradient id="amberGlow" cx="72%" cy="48%" r="42%">
-          <stop offset="0%" stop-color="${c.accent}" stop-opacity="0.22"/>
-          <stop offset="60%" stop-color="${c.accent}" stop-opacity="0.05"/>
-          <stop offset="100%" stop-color="${c.accent}" stop-opacity="0"/>
+        <linearGradient id="bagGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="${highlight}"/>
+          <stop offset="45%" stop-color="${primary}"/>
+          <stop offset="100%" stop-color="${secondary}"/>
+        </linearGradient>
+        <radialGradient id="floorShadow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#09090B" stop-opacity="0.38"/>
+          <stop offset="70%" stop-color="#09090B" stop-opacity="0.12"/>
+          <stop offset="100%" stop-color="#09090B" stop-opacity="0"/>
         </radialGradient>
       </defs>
-
-      <rect width="1440" height="640" fill="url(#heroBg)"/>
-      <rect width="1440" height="640" fill="url(#amberGlow)"/>
-
-      <!-- Subtle Architectural Grid Lines on Right Side -->
-      <g stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="1">
-        <line x1="720" y1="0" x2="720" y2="640"/>
-        <line x1="920" y1="0" x2="920" y2="640"/>
-        <line x1="1120" y1="0" x2="1120" y2="640"/>
-        <line x1="1320" y1="0" x2="1320" y2="640"/>
-        <line x1="680" y1="160" x2="1440" y2="160"/>
-        <line x1="680" y1="320" x2="1440" y2="320"/>
-        <line x1="680" y1="480" x2="1440" y2="480"/>
-      </g>
-
-      <!-- Studio Pedestal Composition on Right -->
-      <rect x="815" y="450" width="510" height="130" rx="12" fill="#27272A" stroke="#3F3F46" stroke-width="2"/>
-      <rect x="845" y="430" width="450" height="26" rx="6" fill="#3F3F46"/>
-
-      <!-- Left Bag on Pedestal (Backpack BP-MY-00513) -->
-      <g transform="translate(835, 130)">
-        <path d="M 65 25 C 65 -5, 125 -5, 125 25" fill="none" stroke="#52525B" stroke-width="12" stroke-linecap="round"/>
-        <rect x="10" y="20" width="170" height="245" rx="34" fill="#18181B" stroke="#52525B" stroke-width="3"/>
-        <rect x="32" y="115" width="126" height="118" rx="16" fill="#27272A" stroke="#FACC15" stroke-width="2"/>
-        <rect x="65" y="52" width="60" height="22" rx="4" fill="#FACC15"/>
-        <text x="95" y="67" font-family="monospace" font-size="11" font-weight="800" fill="#09090B" text-anchor="middle">TGI</text>
-      </g>
-
-      <!-- Center Bag on Pedestal (Luxury Handbag HB-WQ-10670) -->
-      <g transform="translate(995, 165)">
-        <path d="M 52 50 C 52 -18, 138 -18, 138 50" fill="none" stroke="#A69383" stroke-width="12" stroke-linecap="round"/>
-        <path d="M 15 50 L 175 50 L 195 238 L -5 238 Z" fill="#8C7A6B" stroke="#D6CFC5" stroke-width="3"/>
-        <rect x="82" y="50" width="26" height="95" rx="4" fill="#6E5E51"/>
-        <rect x="74" y="118" width="42" height="26" rx="5" fill="#FACC15"/>
-      </g>
-
-      <!-- Right Bag on Pedestal (Crescent Shoulder Bag SG-MY-00813) -->
-      <g transform="translate(1155, 200)">
-        <path d="M 15 65 C 20 -15, 150 -15, 155 65" fill="none" stroke="#B87333" stroke-width="11" stroke-linecap="round"/>
-        <path d="M 10 65 Q 85 110 160 65 C 175 145, 135 215, 85 215 C 35 215, -5 145, 10 65 Z" fill="#9A5B25" stroke="#FBBF24" stroke-width="2.5"/>
-        <rect x="64" y="125" width="42" height="18" rx="4" fill="#FACC15"/>
-      </g>
-
-      <!-- Floating Spec Tag on Pedestal -->
-      <rect x="860" y="485" width="420" height="54" rx="8" fill="#09090B" stroke="#3F3F46" stroke-width="1.5"/>
-      <text x="1070" y="508" font-family="monospace" font-size="12" font-weight="700" fill="#FACC15" text-anchor="middle" letter-spacing="2">${c.kicker}</text>
-      <text x="1070" y="527" font-family="monospace" font-size="11" font-weight="500" fill="#A1A1AA" text-anchor="middle" letter-spacing="1.5">FEATURED SKU: ${c.code}</text>
+      <rect width="800" height="600" fill="url(#studioBg)"/>
+      <polygon points="0,0 340,0 640,600 0,600" fill="#FFFFFF" opacity="0.28"/>
+      <ellipse cx="400" cy="485" rx="235" ry="38" fill="${pedestalSide}"/>
+      <ellipse cx="400" cy="472" rx="235" ry="34" fill="${pedestal}"/>
+      <ellipse cx="400" cy="466" rx="165" ry="22" fill="url(#floorShadow)"/>
+      ${bagShape}
+      <rect x="565" y="532" width="195" height="36" rx="8" fill="#18181B" opacity="0.9"/>
+      <text x="662" y="555" font-family="monospace" font-size="14" font-weight="700" fill="#FACC15" text-anchor="middle" letter-spacing="1.5">${sku}</text>
+      <rect x="520" y="34" width="240" height="32" rx="8" fill="#18181B" opacity="0.88"/>
+      <text x="640" y="55" font-family="sans-serif" font-size="11" font-weight="800" fill="#FACC15" text-anchor="middle" letter-spacing="1.2">WARNA: ${cleanColorUpper}</text>
     </svg>
   `;
-
   return svgToDataUri(svg);
+}
+
+export const HERO_UNSPLASH_PHOTOS: [string, string, string] = [
+  'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=1600&q=85',
+  'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=1600&q=85',
+  'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1600&q=85',
+];
+
+export const BENTO_UNSPLASH_PHOTOS: Record<
+  'new-arrival-backpack' | 'pickup-gudang',
+  string
+> = {
+  'new-arrival-backpack':
+    'https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?auto=format&fit=crop&w=1000&q=85',
+  'pickup-gudang':
+    'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=1000&q=85',
+};
+
+export function createHeroLookbookSvg(slideIndex: 0 | 1 | 2): string {
+  return HERO_UNSPLASH_PHOTOS[slideIndex] || HERO_UNSPLASH_PHOTOS[0];
+}
+
+export function createBentoCardCoverSvg(
+  variant: 'new-arrival-backpack' | 'pickup-gudang'
+): string {
+  return BENTO_UNSPLASH_PHOTOS[variant];
 }
 
 export const STUDIO_PRESETS: StudioPreset[] = [
