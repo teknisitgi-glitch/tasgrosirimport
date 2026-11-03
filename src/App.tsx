@@ -41,6 +41,8 @@ import {
   Filter,
   BookOpen,
   Layers,
+  ClipboardList,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Product,
@@ -53,6 +55,8 @@ import {
   CustomerReview,
   OrderRecord,
   BlogArticle,
+  AdminActivityLog,
+  AdminActivityType,
 } from './types/product';
 import {
   getLocalProducts,
@@ -73,6 +77,10 @@ import {
   getLocalArticles,
   saveLocalArticles,
   resetLocalArticles,
+  getLocalActivityLogs,
+  saveLocalActivityLogs,
+  appendLocalActivityLog,
+  clearLocalActivityLogs,
   DEFAULT_CATEGORIES,
   SUPABASE_SQL_SCHEMA,
   syncProductsToSupabase,
@@ -154,12 +162,32 @@ export default function App() {
   const [articles, setArticles] = useState<BlogArticle[]>(() =>
     getLocalArticles()
   );
+  const [activityLogs, setActivityLogs] = useState<AdminActivityLog[]>(() =>
+    getLocalActivityLogs()
+  );
   const [activeView, setActiveView] = useState<'catalog' | 'blog'>('catalog');
   const [selectedBlogArticle, setSelectedBlogArticle] =
     useState<BlogArticle | null>(null);
   const [adminEditingArticle, setAdminEditingArticle] =
     useState<BlogArticle | null>(null);
   const [appliedVoucher, setAppliedVoucher] = useState<string>('');
+
+  // Helper to append an Audit Trail entry and persist to localStorage
+  const recordActivity = (
+    type: AdminActivityType,
+    actionTitle: string,
+    details: string,
+    actor: string = 'Admin Utama'
+  ) => {
+    const nextLogs = appendLocalActivityLog({
+      type,
+      actionTitle,
+      details,
+      actor,
+    });
+    setActivityLogs(nextLogs);
+    return nextLogs;
+  };
 
   // Filter & Search State
   const [activeCategory, setActiveCategory] =
@@ -253,10 +281,15 @@ export default function App() {
   const [formDescription, setFormDescription] = useState<string>('');
   const [formError, setFormError] = useState<string>('');
 
-  // Admin PIN Protection Modal State
+  // Admin PIN / Passcode Protection Modal State
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
   const [pinInput, setPinInput] = useState<string>('');
   const [pinError, setPinError] = useState<string>('');
+  const [showPinPassword, setShowPinPassword] = useState<boolean>(false);
+  const [pinFailedAttempts, setPinFailedAttempts] = useState<number>(0);
+  const [pendingAdminAction, setPendingAdminAction] = useState<
+    (() => void) | null
+  >(null);
 
   // Interactive "Tanya Stok / Live Chat" Floating WhatsApp Widget State
   const [isQuickChatOpen, setIsQuickChatOpen] = useState<boolean>(false);
@@ -312,6 +345,10 @@ export default function App() {
         if (Array.isArray(res.articles) && res.articles.length > 0) {
           setArticles(res.articles);
           saveLocalArticles(res.articles);
+        }
+        if (Array.isArray(res.activityLogs) && res.activityLogs.length > 0) {
+          setActivityLogs(res.activityLogs);
+          saveLocalActivityLogs(res.activityLogs);
         }
       })
       .catch(() => {})
@@ -588,21 +625,80 @@ export default function App() {
     [cartItems]
   );
 
-  // Cart Handlers (Supports both Color & Size Variants)
+  // Helper to mutate product stock in real-time and sync with localStorage/Supabase
+  const adjustProductStockInCatalog = (
+    adjustments: Array<{ productId: string; delta: number; soldDelta?: number }>
+  ): Product[] => {
+    let nextProductsSnapshot: Product[] = [];
+    setProducts((prev) => {
+      const next = prev.map((p) => {
+        const adj = adjustments.find((a) => a.productId === p.id);
+        if (!adj) return p;
+        const nextStock = Math.max(0, (p.stock || 0) + adj.delta);
+        const nextSold = Math.max(0, (p.soldCount || 0) + (adj.soldDelta || 0));
+        const nextStatus: StockStatusLabel =
+          nextStock <= 0
+            ? 'Habis'
+            : nextStock <= 25
+            ? 'Stok Terbatas'
+            : 'Ready Stock';
+        return {
+          ...p,
+          stock: nextStock,
+          soldCount: nextSold,
+          stockStatus: nextStatus,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+      nextProductsSnapshot = next;
+      saveLocalProducts(next);
+      return next;
+    });
+    setSelectedProduct((prevSel) => {
+      if (!prevSel) return null;
+      const updatedMatch = nextProductsSnapshot.find(
+        (p) => p.id === prevSel.id
+      );
+      return updatedMatch || prevSel;
+    });
+    return nextProductsSnapshot;
+  };
+
+  // Cart Handlers with Real-Time Inventory Sync (Prevents Overselling)
   const handleAddToCart = (
     product: Product,
     color: string = product.colors?.[0] || 'Default',
     qtyToAdd: number = 1,
     size?: string
   ) => {
-    const defaultSizes = getProductSizeOptions(product);
+    const liveProduct =
+      products.find((p) => p.id === product.id) || product;
+    if (liveProduct.stock <= 0) {
+      showToast(
+        `Maaf, stok gudang untuk ${liveProduct.sku} (${liveProduct.name}) saat ini habis.`
+      );
+      return;
+    }
+
+    const actualQty = Math.min(Math.max(1, qtyToAdd), liveProduct.stock);
+    const defaultSizes = getProductSizeOptions(liveProduct);
     const resolvedSize =
       size || defaultSizes[1]?.code || defaultSizes[0]?.code || 'Medium (Standar)';
+
+    // Deduct stock immediately in real-time to prevent overselling
+    const nextProds = adjustProductStockInCatalog([
+      { productId: liveProduct.id, delta: -actualQty },
+    ]);
+    const updatedProductRef =
+      nextProds.find((p) => p.id === liveProduct.id) || {
+        ...liveProduct,
+        stock: Math.max(0, liveProduct.stock - actualQty),
+      };
 
     setCartItems((prev) => {
       const existingIndex = prev.findIndex(
         (item) =>
-          item.product.id === product.id &&
+          item.product.id === liveProduct.id &&
           item.selectedColor === color &&
           (item.selectedSize || 'Medium (Standar)') === resolvedSize
       );
@@ -610,33 +706,41 @@ export default function App() {
         const updated = [...prev];
         updated[existingIndex] = {
           ...updated[existingIndex],
-          product,
+          product: updatedProductRef,
           selectedSize: resolvedSize,
-          quantity: updated[existingIndex].quantity + qtyToAdd,
+          quantity: updated[existingIndex].quantity + actualQty,
         };
         return updated;
       }
       return [
         ...prev,
         {
-          product,
+          product: updatedProductRef,
           selectedColor: color,
           selectedSize: resolvedSize,
-          quantity: qtyToAdd,
+          quantity: actualQty,
         },
       ];
     });
+
+    recordActivity(
+      'stock',
+      `Reservasi Keranjang: ${liveProduct.sku} (-${actualQty} pcs)`,
+      `Pembeli menambahkan ${actualQty} pcs ${liveProduct.name} (${color}) ke keranjang. Sisa stok aktual: ${updatedProductRef.stock} pcs.`,
+      'Sistem Inventori'
+    );
+
     showToast(
-      `${product.sku} (${color} · ${resolvedSize}) ditambahkan ke Keranjang!`,
+      `${liveProduct.sku} (${color} · ${resolvedSize}) masuk Keranjang! Sisa stok: ${updatedProductRef.stock} pcs`,
       true,
       {
-        productName: product.name,
-        sku: product.sku,
+        productName: liveProduct.name,
+        sku: liveProduct.sku,
         colorLabel: color,
         sizeLabel: resolvedSize,
-        quantity: qtyToAdd,
-        unitPrice: product.salePrice,
-        imageUrl: product.imageUrl,
+        quantity: actualQty,
+        unitPrice: liveProduct.salePrice,
+        imageUrl: liveProduct.imageUrl,
       }
     );
   };
@@ -646,32 +750,64 @@ export default function App() {
     batchItems: Array<{ color: string; quantity: number }>,
     size?: string
   ) => {
+    const liveProduct =
+      products.find((p) => p.id === product.id) || product;
+    if (liveProduct.stock <= 0) {
+      showToast(
+        `Maaf, stok gudang untuk ${liveProduct.sku} saat ini habis.`
+      );
+      return;
+    }
+
     const validBatch = batchItems.filter((b) => b.quantity > 0);
     if (validBatch.length === 0) return;
 
-    const defaultSizes = getProductSizeOptions(product);
+    // Cap total batch quantity to available live stock to prevent overselling
+    let remainingStockBudget = liveProduct.stock;
+    const cappedBatch: Array<{ color: string; quantity: number }> = [];
+    for (const entry of validBatch) {
+      if (remainingStockBudget <= 0) break;
+      const take = Math.min(entry.quantity, remainingStockBudget);
+      if (take > 0) {
+        cappedBatch.push({ color: entry.color, quantity: take });
+        remainingStockBudget -= take;
+      }
+    }
+    if (cappedBatch.length === 0) return;
+
+    const totalAdded = cappedBatch.reduce((acc, b) => acc + b.quantity, 0);
+    const defaultSizes = getProductSizeOptions(liveProduct);
     const resolvedSize =
       size || defaultSizes[1]?.code || defaultSizes[0]?.code || 'Medium (Standar)';
 
+    const nextProds = adjustProductStockInCatalog([
+      { productId: liveProduct.id, delta: -totalAdded },
+    ]);
+    const updatedProductRef =
+      nextProds.find((p) => p.id === liveProduct.id) || {
+        ...liveProduct,
+        stock: Math.max(0, liveProduct.stock - totalAdded),
+      };
+
     setCartItems((prev) => {
       const updated = [...prev];
-      validBatch.forEach(({ color, quantity }) => {
+      cappedBatch.forEach(({ color, quantity }) => {
         const existingIndex = updated.findIndex(
           (item) =>
-            item.product.id === product.id &&
+            item.product.id === liveProduct.id &&
             item.selectedColor === color &&
             (item.selectedSize || 'Medium (Standar)') === resolvedSize
         );
         if (existingIndex > -1) {
           updated[existingIndex] = {
             ...updated[existingIndex],
-            product,
+            product: updatedProductRef,
             selectedSize: resolvedSize,
             quantity: updated[existingIndex].quantity + quantity,
           };
         } else {
           updated.push({
-            product,
+            product: updatedProductRef,
             selectedColor: color,
             selectedSize: resolvedSize,
             quantity,
@@ -681,22 +817,28 @@ export default function App() {
       return updated;
     });
 
-    const totalAdded = validBatch.reduce((acc, b) => acc + b.quantity, 0);
-    const colorSummary = validBatch
+    const colorSummary = cappedBatch
       .map((b) => `${b.color} x${b.quantity}`)
       .join(', ');
 
+    recordActivity(
+      'stock',
+      `Quick Add Batch: ${liveProduct.sku} (-${totalAdded} pcs)`,
+      `Batch multi-warna (${colorSummary}) masuk keranjang. Sisa stok aktual: ${updatedProductRef.stock} pcs.`,
+      'Sistem Inventori'
+    );
+
     showToast(
-      `Batch ${totalAdded} pcs ${product.sku} (${colorSummary}) berhasil masuk Keranjang!`,
+      `Batch ${totalAdded} pcs ${liveProduct.sku} (${colorSummary}) berhasil masuk Keranjang!`,
       true,
       {
-        productName: product.name,
-        sku: product.sku,
+        productName: liveProduct.name,
+        sku: liveProduct.sku,
         colorLabel: colorSummary,
         sizeLabel: resolvedSize,
         quantity: totalAdded,
-        unitPrice: product.salePrice,
-        imageUrl: product.imageUrl,
+        unitPrice: liveProduct.salePrice,
+        imageUrl: liveProduct.imageUrl,
       }
     );
   };
@@ -707,6 +849,35 @@ export default function App() {
     delta: number,
     size?: string
   ) => {
+    const targetItem = cartItems.find((item) => {
+      const matchesSize = size
+        ? (item.selectedSize || 'Medium (Standar)') === size
+        : true;
+      return (
+        item.product.id === productId &&
+        item.selectedColor === color &&
+        matchesSize
+      );
+    });
+    if (!targetItem) return;
+
+    const liveProd = products.find((p) => p.id === productId);
+    if (delta > 0 && liveProd && liveProd.stock < delta) {
+      showToast(
+        `Stok gudang ${liveProd.sku} tersisa ${liveProd.stock} pcs lagi.`
+      );
+      return;
+    }
+
+    const actualStockDelta =
+      delta > 0
+        ? -delta
+        : Math.min(targetItem.quantity, Math.abs(delta));
+
+    adjustProductStockInCatalog([
+      { productId, delta: actualStockDelta },
+    ]);
+
     setCartItems((prev) =>
       prev
         .map((item) => {
@@ -732,6 +903,21 @@ export default function App() {
     color: string,
     size?: string
   ) => {
+    const removedItem = cartItems.find((item) => {
+      const matchesSize = size
+        ? (item.selectedSize || 'Medium (Standar)') === size
+        : true;
+      return (
+        item.product.id === productId &&
+        item.selectedColor === color &&
+        matchesSize
+      );
+    });
+    if (removedItem) {
+      adjustProductStockInCatalog([
+        { productId, delta: removedItem.quantity },
+      ]);
+    }
     setCartItems((prev) =>
       prev.filter((item) => {
         const matchesSize = size
@@ -747,101 +933,143 @@ export default function App() {
   };
 
   const handleClearCart = () => {
+    if (cartItems.length > 0) {
+      const restoreMap = new Map<string, number>();
+      cartItems.forEach((item) => {
+        restoreMap.set(
+          item.product.id,
+          (restoreMap.get(item.product.id) || 0) + item.quantity
+        );
+      });
+      const adjustments = Array.from(restoreMap.entries()).map(
+        ([productId, qty]) => ({ productId, delta: qty })
+      );
+      adjustProductStockInCatalog(adjustments);
+    }
     setCartItems([]);
+  };
+
+  // Admin Session Guard: Requires PIN Authentication if Admin Mode is not active
+  const requireAdminAuth = (action: () => void) => {
+    if (isAdminMode) {
+      action();
+      return;
+    }
+    setPendingAdminAction(() => action);
+    setPinInput('');
+    setPinError('');
+    setIsPinModalOpen(true);
   };
 
   // Admin Product Modal Initializer
   const openAddProductModal = () => {
-    const randomCode = Math.floor(10000 + Math.random() * 89999);
-    const defaultSku = `BP-TG-${randomCode}`;
-    setEditingProduct(null);
-    setFormName('');
-    setFormSku(defaultSku);
-    setFormCategory(
-      (activeCategory !== 'Semua' &&
-      editableCategoryNames.includes(activeCategory)
-        ? activeCategory
-        : editableCategoryNames[0]) || 'Backpack'
-    );
-    setFormNormalPrice(249000);
-    setFormSalePrice(145000);
-    setFormWholesaleMinQty(6);
-    setFormWholesalePrice(122000);
-    setFormRating(4.9);
-    setFormStock(120);
-    setFormStockStatus('Ready Stock');
-    setFormIsSale(true);
-    setFormImageUrl(
-      createBagStudioSvg({
-        variant: 'backpack-black',
-        sku: defaultSku,
-        accentLabel: 'NEW COLLECTION',
-      })
-    );
-    setFormMaterial('Material Import Grade A + Hardware Anti-Karat');
-    setFormDimensions('30 × 14 × 42 cm');
-    setFormWeightGrams(650);
-    setFormGalleryImages([]);
-    setFormNewGalleryUrl('');
-    setFormColors('Black, Cream, Mocca');
-    setFormDescription(
-      'Tas import kualitas tangan pertama dari gudang TGI. Jahitan bartack rapi, material tebal, dan bergaransi retur 100%.'
-    );
-    setFormError('');
-    setIsProductModalOpen(true);
+    requireAdminAuth(() => {
+      const randomCode = Math.floor(10000 + Math.random() * 89999);
+      const defaultSku = `BP-TG-${randomCode}`;
+      setEditingProduct(null);
+      setFormName('');
+      setFormSku(defaultSku);
+      setFormCategory(
+        (activeCategory !== 'Semua' &&
+        editableCategoryNames.includes(activeCategory)
+          ? activeCategory
+          : editableCategoryNames[0]) || 'Backpack'
+      );
+      setFormNormalPrice(249000);
+      setFormSalePrice(145000);
+      setFormWholesaleMinQty(6);
+      setFormWholesalePrice(122000);
+      setFormRating(4.9);
+      setFormStock(120);
+      setFormStockStatus('Ready Stock');
+      setFormIsSale(true);
+      setFormImageUrl(
+        createBagStudioSvg({
+          variant: 'backpack-black',
+          sku: defaultSku,
+          accentLabel: 'NEW COLLECTION',
+        })
+      );
+      setFormMaterial('Material Import Grade A + Hardware Anti-Karat');
+      setFormDimensions('30 × 14 × 42 cm');
+      setFormWeightGrams(650);
+      setFormGalleryImages([]);
+      setFormNewGalleryUrl('');
+      setFormColors('Black, Cream, Mocca');
+      setFormDescription(
+        'Tas import kualitas tangan pertama dari gudang TGI. Jahitan bartack rapi, material tebal, dan bergaransi retur 100%.'
+      );
+      setFormError('');
+      setIsProductModalOpen(true);
+    });
   };
 
   const openEditProductModal = (product: Product) => {
-    setEditingProduct(product);
-    setFormName(product.name);
-    setFormSku(product.sku);
-    setFormCategory(product.category);
-    setFormNormalPrice(product.normalPrice);
-    setFormSalePrice(product.salePrice);
-    setFormWholesaleMinQty(product.wholesaleMinQty || 6);
-    setFormWholesalePrice(product.wholesalePrice || product.salePrice);
-    setFormRating(product.rating);
-    setFormStock(product.stock);
-    setFormStockStatus(
-      product.stockStatus ||
-        (product.stock <= 0
-          ? 'Habis'
-          : product.stock <= 25
-          ? 'Stok Terbatas'
-          : 'Ready Stock')
-    );
-    setFormIsSale(product.isSale);
-    setFormImageUrl(product.imageUrl);
-    setFormGalleryImages(
-      Array.isArray(product.galleryImages)
-        ? product.galleryImages.filter((img) => img && img !== product.imageUrl)
-        : []
-    );
-    setFormNewGalleryUrl('');
-    setFormMaterial(product.material || '');
-    setFormDimensions(product.dimensions || '');
-    setFormWeightGrams(product.weightGrams || 650);
-    setFormColors((product.colors || ['Black', 'Cream', 'Mocca']).join(', '));
-    setFormDescription(product.description || '');
-    setFormError('');
-    setIsProductModalOpen(true);
+    requireAdminAuth(() => {
+      setEditingProduct(product);
+      setFormName(product.name);
+      setFormSku(product.sku);
+      setFormCategory(product.category);
+      setFormNormalPrice(product.normalPrice);
+      setFormSalePrice(product.salePrice);
+      setFormWholesaleMinQty(product.wholesaleMinQty || 6);
+      setFormWholesalePrice(product.wholesalePrice || product.salePrice);
+      setFormRating(product.rating);
+      setFormStock(product.stock);
+      setFormStockStatus(
+        product.stockStatus ||
+          (product.stock <= 0
+            ? 'Habis'
+            : product.stock <= 25
+            ? 'Stok Terbatas'
+            : 'Ready Stock')
+      );
+      setFormIsSale(product.isSale);
+      setFormImageUrl(product.imageUrl);
+      setFormGalleryImages(
+        Array.isArray(product.galleryImages)
+          ? product.galleryImages.filter(
+              (img) => img && img !== product.imageUrl
+            )
+          : []
+      );
+      setFormNewGalleryUrl('');
+      setFormMaterial(product.material || '');
+      setFormDimensions(product.dimensions || '');
+      setFormWeightGrams(product.weightGrams || 650);
+      setFormColors(
+        (product.colors || ['Black', 'Cream', 'Mocca']).join(', ')
+      );
+      setFormDescription(product.description || '');
+      setFormError('');
+      setIsProductModalOpen(true);
+    });
   };
 
   const openAppearanceModal = (
     tab: AppearanceTab = 'hero',
     articleToEdit: BlogArticle | null = null
   ) => {
-    setAdminEditingArticle(articleToEdit);
-    setAppearanceInitialTab(tab);
-    setIsAppearanceModalOpen(true);
+    requireAdminAuth(() => {
+      setAdminEditingArticle(articleToEdit);
+      setAppearanceInitialTab(tab);
+      setIsAppearanceModalOpen(true);
+    });
   };
 
   const handleRequestToggleAdminMode = () => {
     if (isAdminMode) {
       setIsAdminMode(false);
+      recordActivity(
+        'auth',
+        'Sesi Mode Admin Dikunci (Logout)',
+        'Admin mengunci kembali sesi Master Panel Admin untuk keamanan publik.',
+        'Admin Utama'
+      );
       showToast('Mode Admin dikunci kembali.');
       return;
     }
+    setPendingAdminAction(null);
     setPinInput('');
     setPinError('');
     setIsPinModalOpen(true);
@@ -855,9 +1083,31 @@ export default function App() {
       setIsPinModalOpen(false);
       setPinInput('');
       setPinError('');
-      showToast('PIN Valid! Panel Manajemen Admin diaktifkan.');
+      setPinFailedAttempts(0);
+      recordActivity(
+        'auth',
+        'Autentikasi PIN Admin Berhasil',
+        'Akses Master Panel Admin dibuka menggunakan kode PIN rahasia.',
+        'Admin Utama'
+      );
+      showToast('PIN Valid! Sesi Master Panel Admin diaktifkan.');
+      if (pendingAdminAction) {
+        const cb = pendingAdminAction;
+        setPendingAdminAction(null);
+        cb();
+      }
     } else {
-      setPinError('PIN Admin tidak sesuai. Silakan coba lagi.');
+      const nextAttempts = pinFailedAttempts + 1;
+      setPinFailedAttempts(nextAttempts);
+      setPinError(
+        `PIN Admin tidak sesuai (Percobaan gagal #${nextAttempts}). Silakan periksa kembali kode PIN Anda.`
+      );
+      recordActivity(
+        'auth',
+        `Percobaan Login Admin Gagal (#${nextAttempts})`,
+        'Seseorang mencoba membuka Mode Admin dengan kode PIN yang salah.',
+        'Sistem Keamanan'
+      );
     }
   };
 
@@ -881,7 +1131,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressedDataUrl = await compressImageFileToDataUrl(file, 1000, 0.8);
+      const compressedDataUrl = await compressImageFileToDataUrl(file, 1000, 0.82);
       setFormImageUrl(compressedDataUrl);
     } catch {
       // ignore
@@ -896,7 +1146,7 @@ export default function App() {
     const uploadedList: string[] = [];
     for (let i = 0; i < files.length; i++) {
       try {
-        const dataUrl = await compressImageFileToDataUrl(files[i], 1000, 0.8);
+        const dataUrl = await compressImageFileToDataUrl(files[i], 1000, 0.82);
         uploadedList.push(dataUrl);
       } catch {
         // ignore single file error
@@ -987,6 +1237,16 @@ export default function App() {
     };
 
     if (editingProduct) {
+      const nextLogs = recordActivity(
+        'product',
+        `Perbarui Produk: ${newProductObj.sku}`,
+        `Mengubah detail ${newProductObj.name} (Harga: ${formatRupiah(
+          newProductObj.salePrice
+        )}, Stok: ${newProductObj.stock} pcs, Berat: ${
+          newProductObj.weightGrams
+        }g).`,
+        'Admin Utama'
+      );
       setProducts((prev) => {
         const next = prev.map((p) =>
           p.id === editingProduct.id ? newProductObj : p
@@ -998,7 +1258,9 @@ export default function App() {
             next,
             uiConfig,
             orders,
-            reviews
+            reviews,
+            articles,
+            nextLogs
           ).catch(() => {});
         }
         return next;
@@ -1012,6 +1274,14 @@ export default function App() {
       );
       showToast(`Produk ${newProductObj.sku} berhasil diperbarui!`);
     } else {
+      const nextLogs = recordActivity(
+        'product',
+        `Tambah Produk Baru: ${newProductObj.sku}`,
+        `Menambahkan SKU baru "${newProductObj.name}" kategori ${
+          newProductObj.category
+        } dengan stok awal ${newProductObj.stock} pcs.`,
+        'Admin Utama'
+      );
       setProducts((prev) => {
         const next = [newProductObj, ...prev];
         saveLocalProducts(next);
@@ -1021,7 +1291,9 @@ export default function App() {
             next,
             uiConfig,
             orders,
-            reviews
+            reviews,
+            articles,
+            nextLogs
           ).catch(() => {});
         }
         return next;
@@ -1034,6 +1306,12 @@ export default function App() {
 
   const handleDeleteProduct = (productId: string) => {
     const target = products.find((p) => p.id === productId);
+    const nextLogs = recordActivity(
+      'product',
+      `Hapus Produk: ${target?.sku || productId}`,
+      `Menghapus produk "${target?.name || productId}" dari katalog utama.`,
+      'Admin Utama'
+    );
     setProducts((prev) => {
       const next = prev.filter((p) => p.id !== productId);
       saveLocalProducts(next);
@@ -1044,7 +1322,9 @@ export default function App() {
           next,
           uiConfig,
           orders,
-          reviews
+          reviews,
+          articles,
+          nextLogs
         ).catch(() => {});
       }
       return next;
@@ -1067,6 +1347,12 @@ export default function App() {
     setReviews(defaultReviews);
     setArticles(defaultArticles);
     setConfirmResetInline(false);
+    recordActivity(
+      'ui-popup',
+      'Reset Katalog & Pengaturan ke Default',
+      'Mengembalikan seluruh produk, banner, artikel, dan konfigurasi ke pengaturan awal pabrik.',
+      'Admin Utama'
+    );
     showToast('Katalog, tampilan, artikel, ulasan & kontak dikembalikan ke pengaturan default.');
   };
 
@@ -1079,6 +1365,15 @@ export default function App() {
     setStoreConfig(newStoreConfig);
     saveStoreConfig(newStoreConfig);
 
+    const nextLogs = recordActivity(
+      'ui-popup',
+      'Simpan Pengaturan Master Panel Admin',
+      `Memperbarui konfigurasi tampilan, banner, pop-up promo grosir (${
+        newUiConfig.wholesalePopup?.enabled ? 'Aktif' : 'Nonaktif'
+      }), kategori (${newUiConfig.categories?.length || 0}), dan kontak toko.`,
+      'Admin Utama'
+    );
+
     if (newStoreConfig.supabaseUrl && newStoreConfig.supabaseAnonKey) {
       syncProductsToSupabase(
         newStoreConfig,
@@ -1086,7 +1381,8 @@ export default function App() {
         newUiConfig,
         orders,
         reviews,
-        articles
+        articles,
+        nextLogs
       ).catch(() => {});
     }
     showToast('Pengaturan Tampilan, Konten & Kontak Perusahaan berhasil disimpan!');
@@ -1144,7 +1440,8 @@ export default function App() {
       uiConfig,
       orders,
       reviews,
-      articles
+      articles,
+      activityLogs
     );
     setSyncState({ loading: false, ok: res.ok, message: res.message });
     if (res.ok) {
@@ -1189,6 +1486,10 @@ export default function App() {
         setArticles(res.articles);
         saveLocalArticles(res.articles);
       }
+      if (Array.isArray(res.activityLogs) && res.activityLogs.length > 0) {
+        setActivityLogs(res.activityLogs);
+        saveLocalActivityLogs(res.activityLogs);
+      }
       showToast('Data berhasil dimuat dari Cloud Supabase!');
     }
     setSyncState({ loading: false, ok: res.ok, message: res.message });
@@ -1204,7 +1505,9 @@ export default function App() {
           products,
           uiConfig,
           orders,
-          next
+          next,
+          articles,
+          activityLogs
         ).catch(() => {});
       }
       return next;
@@ -1225,7 +1528,9 @@ export default function App() {
           products,
           uiConfig,
           orders,
-          next
+          next,
+          articles,
+          activityLogs
         ).catch(() => {});
       }
       return next;
@@ -1238,13 +1543,45 @@ export default function App() {
   const handleRecordWhatsAppOrder = (newOrder: OrderRecord) => {
     const nextOrders = saveLocalOrder(newOrder);
     setOrders(nextOrders);
+
+    // Increment soldCount for each ordered product (stock was already deducted when added to cart)
+    const soldAdjustments: Array<{
+      productId: string;
+      delta: number;
+      soldDelta: number;
+    }> = [];
+    cartItems.forEach((item) => {
+      soldAdjustments.push({
+        productId: item.product.id,
+        delta: 0,
+        soldDelta: item.quantity,
+      });
+    });
+    const nextProducts = adjustProductStockInCatalog(soldAdjustments);
+
+    // Clear cart without restoring stock since checkout is committed
+    setCartItems([]);
+
+    const nextLogs = recordActivity(
+      'order-checkout',
+      `Checkout WhatsApp #${newOrder.referenceCode} (${newOrder.totalQuantity} pcs)`,
+      `Pemesan: ${newOrder.customerName} (${newOrder.customerPhone}) · Tujuan: ${
+        newOrder.customerCity
+      } · Kargo: ${newOrder.cargoCourier} · Total: ${formatRupiah(
+        newOrder.totalPayable
+      )}. Stok dikomit permanen.`,
+      newOrder.customerName || 'Pembeli Website'
+    );
+
     if (storeConfig.supabaseUrl && storeConfig.supabaseAnonKey) {
       syncProductsToSupabase(
         storeConfig,
-        products,
+        nextProducts,
         uiConfig,
         nextOrders,
-        reviews
+        reviews,
+        articles,
+        nextLogs
       ).catch(() => {});
     }
   };
@@ -1287,6 +1624,9 @@ export default function App() {
       <Navbar
         storeName={storeConfig.storeName}
         storeConfig={storeConfig}
+        products={products}
+        onSelectProduct={setSelectedProduct}
+        onQuickAddToCart={(prod) => handleAddToCart(prod)}
         categories={dynamicCategories}
         productCountsByCategory={productCountsByCategory}
         totalProductCount={products.length}
@@ -1454,6 +1794,15 @@ export default function App() {
                 >
                   <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                   <span>Manajemen Artikel ({articles.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openAppearanceModal('audit-log')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold border border-emerald-400/40 transition-colors cursor-pointer"
+                >
+                  <ClipboardList className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Log Aktivitas & Stok ({activityLogs.length})</span>
                 </button>
 
                 <button
@@ -2824,7 +3173,7 @@ export default function App() {
         onOpenResellerGuide={() => setIsResellerGuideOpen(true)}
       />
 
-      {/* Master Panel Admin Terpadu (including Pop-Up Promo & Manajemen Artikel) */}
+      {/* Master Panel Admin Terpadu (including Pop-Up Promo, Manajemen Artikel & Audit Log) */}
       <AdminAppearanceModal
         isOpen={isAppearanceModalOpen}
         initialTab={appearanceInitialTab}
@@ -2834,6 +3183,11 @@ export default function App() {
         onUpdateProducts={(nextProducts) => {
           setProducts(nextProducts);
           saveLocalProducts(nextProducts);
+          recordActivity(
+            'product',
+            'Pembaruan Cepat Produk & Stok (Inline Table)',
+            `Admin memperbarui data harga/stok/berat produk dari tabel Master Panel (${nextProducts.length} SKU aktif)`
+          );
           setCartItems((prev) =>
             prev.map((item) => {
               const updatedMatch = nextProducts.find(
@@ -2862,8 +3216,19 @@ export default function App() {
         initialEditArticle={adminEditingArticle}
         onPreviewWholesalePopup={() => setIsWholesalePromoOpen(true)}
         onUpdateArticles={(nextArticles) => {
+          const isAdded = nextArticles.length > articles.length;
+          const isRemoved = nextArticles.length < articles.length;
           setArticles(nextArticles);
           saveLocalArticles(nextArticles);
+          recordActivity(
+            'article',
+            isAdded
+              ? 'Publikasi Artikel Blog Baru'
+              : isRemoved
+              ? 'Penghapusan Artikel Blog'
+              : 'Pembaruan Konten Artikel Blog',
+            `Total artikel aktif saat ini: ${nextArticles.length} artikel`
+          );
           if (selectedBlogArticle) {
             const updatedCurrent = nextArticles.find(
               (a) => a.id === selectedBlogArticle.id
@@ -2880,6 +3245,12 @@ export default function App() {
               nextArticles
             ).catch(() => {});
           }
+        }}
+        activityLogs={activityLogs}
+        onClearActivityLogs={() => {
+          const cleared = clearLocalActivityLogs();
+          setActivityLogs(cleared);
+          showToast('Riwayat log aktivitas admin berhasil dibersihkan.');
         }}
         onClose={() => {
           setIsAppearanceModalOpen(false);
@@ -3688,11 +4059,14 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Verifikasi PIN Admin */}
+      {/* Modal Verifikasi PIN / Passcode Sesi Login Master Panel Admin */}
       {isPinModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-zinc-950/75 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setIsPinModalOpen(false)}
+          onClick={() => {
+            setIsPinModalOpen(false);
+            setPendingAdminAction(null);
+          }}
         >
           <div
             className="bg-white rounded-2xl max-w-sm w-full overflow-hidden border border-zinc-200 shadow-2xl"
@@ -3701,13 +4075,21 @@ export default function App() {
             <div className="px-5 py-4 bg-zinc-950 text-white flex items-center justify-between border-b border-zinc-800">
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 text-amber-400" />
-                <h3 className="font-display text-lg font-bold tracking-wide uppercase">
-                  MASUKKAN PIN ADMIN
-                </h3>
+                <div>
+                  <h3 className="font-display text-lg font-bold tracking-wide uppercase leading-none">
+                    AUTENTIKASI MASTER ADMIN
+                  </h3>
+                  <span className="text-[10px] font-mono text-zinc-400">
+                    Protected Session Guard · TGI Security
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsPinModalOpen(false)}
+                onClick={() => {
+                  setIsPinModalOpen(false);
+                  setPendingAdminAction(null);
+                }}
                 className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -3716,23 +4098,34 @@ export default function App() {
 
             <form onSubmit={handleVerifyAdminPin} className="p-5 space-y-4">
               <p className="text-xs text-zinc-600 leading-relaxed">
-                Masukkan kode PIN keamanan untuk membuka{' '}
-                <strong className="text-zinc-900">Mode Manajemen Admin</strong>{' '}
-                (edit produk, banner, live studio & kontak).
+                Masukkan <strong className="text-zinc-900">PIN / Passcode Rahasia Admin</strong>{' '}
+                untuk membuka sesi <strong className="text-zinc-900">Master Panel Admin</strong>{' '}
+                (manajemen stok gudang, harga katalog, artikel blog & audit trail).
               </p>
 
               {pinError && (
-                <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">
-                  {pinError}
+                <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{pinError}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-700 mb-1.5">
-                  Kode PIN Admin
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-700">
+                    Kode PIN / Passcode Admin
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPinPassword((prev) => !prev)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 hover:text-zinc-900 cursor-pointer"
+                  >
+                    <Eye className="w-3 h-3" />
+                    <span>{showPinPassword ? 'Sembunyikan' : 'Tampilkan'}</span>
+                  </button>
+                </div>
                 <input
-                  type="password"
+                  type={showPinPassword ? 'text' : 'password'}
                   autoFocus
                   required
                   value={pinInput}
@@ -3743,22 +4136,28 @@ export default function App() {
                   placeholder="••••••"
                   className="w-full px-3.5 py-2.5 text-center font-mono text-lg font-bold tracking-[0.35em] rounded-xl border border-zinc-300 focus:border-zinc-950 focus:outline-none"
                 />
+                <p className="mt-1.5 text-[10px] text-zinc-400 text-center">
+                  Setiap aktivitas login & perubahan tercatat otomatis pada Audit Trail.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setIsPinModalOpen(false)}
+                  onClick={() => {
+                    setIsPinModalOpen(false);
+                    setPendingAdminAction(null);
+                  }}
                   className="px-4 py-2 rounded-xl border border-zinc-300 text-zinc-700 hover:bg-zinc-100 text-xs font-semibold cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-extrabold cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-extrabold cursor-pointer shadow-xs"
                 >
                   <Unlock className="w-3.5 h-3.5" />
-                  <span>Buka Mode Admin</span>
+                  <span>Verifikasi & Buka Panel</span>
                 </button>
               </div>
             </form>

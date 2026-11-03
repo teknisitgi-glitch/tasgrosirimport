@@ -1,3 +1,4 @@
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   Product,
   CategoryItem,
@@ -7,6 +8,8 @@ import {
   OrderRecord,
   BlogArticle,
   WholesalePopupConfig,
+  AdminActivityLog,
+  AdminActivityType,
 } from '../types/product';
 import {
   createBagStudioSvg,
@@ -21,6 +24,7 @@ const STORAGE_KEY_UI_CONTENT = 'tgi_ui_content_config_v1';
 const STORAGE_KEY_REVIEWS = 'tgi_customer_reviews_v2';
 const STORAGE_KEY_ORDERS = 'tgi_order_history_v2';
 const STORAGE_KEY_ARTICLES = 'tgi_blog_articles_v1';
+const STORAGE_KEY_ACTIVITY_LOGS = 'tgi_admin_activity_logs_v1';
 
 // Clean up legacy v1 dummy data keys from localStorage
 try {
@@ -862,66 +866,145 @@ export function saveAllLocalOrders(orders: OrderRecord[]): void {
   }
 }
 
+export function getLocalActivityLogs(): AdminActivityLog[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ACTIVITY_LOGS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalActivityLogs(logs: AdminActivityLog[]): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_ACTIVITY_LOGS,
+      JSON.stringify(logs.slice(0, 150))
+    );
+  } catch {
+    // ignore
+  }
+}
+
+export function appendLocalActivityLog(params: {
+  type: AdminActivityType;
+  actionTitle: string;
+  details: string;
+  actor?: string;
+}): AdminActivityLog[] {
+  const entry: AdminActivityLog = {
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    type: params.type,
+    actionTitle: params.actionTitle,
+    details: params.details,
+    actor: params.actor || 'Admin Gudang TGI',
+    createdAt: new Date().toISOString(),
+  };
+  const next = [entry, ...getLocalActivityLogs()].slice(0, 150);
+  saveLocalActivityLogs(next);
+  return next;
+}
+
+export function clearLocalActivityLogs(): AdminActivityLog[] {
+  try {
+    localStorage.removeItem(STORAGE_KEY_ACTIVITY_LOGS);
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+let cachedSupabaseClient: SupabaseClient | null = null;
+let cachedSupabaseSignature = '';
+
+/**
+ * Returns a memoized, type-safe Supabase client instance.
+ * Enforces HTTPS/HTTP URL validation and uses parameterized PostgREST query builders
+ * to prevent SQL/filter injection vulnerabilities.
+ */
+export function getSupabaseClient(config: StoreConfig): SupabaseClient | null {
+  const url = (config.supabaseUrl || '').trim().replace(/\/$/, '');
+  const key = (config.supabaseAnonKey || '').trim();
+  if (!url || !key) return null;
+
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  const signature = `${url}::${key}`;
+  if (cachedSupabaseClient && cachedSupabaseSignature === signature) {
+    return cachedSupabaseClient;
+  }
+
+  cachedSupabaseClient = createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+  cachedSupabaseSignature = signature;
+  return cachedSupabaseClient;
+}
+
 export async function syncProductsToSupabase(
   config: StoreConfig,
   products: Product[],
   uiConfig?: UiContentConfig,
   orders?: OrderRecord[],
   reviews?: CustomerReview[],
-  articles?: BlogArticle[]
+  articles?: BlogArticle[],
+  activityLogs?: AdminActivityLog[]
 ): Promise<{ ok: boolean; message: string }> {
-  const url = config.supabaseUrl.trim().replace(/\/$/, '');
-  const key = config.supabaseAnonKey.trim();
+  const supabase = getSupabaseClient(config);
 
-  if (!url || !key) {
+  if (!supabase) {
     return {
       ok: false,
       message:
-        'URL Supabase atau Anon Key belum diisi. Data tetap tersimpan aman di localStorage.',
+        'URL Supabase atau Anon Key belum diisi / tidak valid. Data tetap tersimpan aman di localStorage.',
     };
   }
 
   try {
     if (products.length > 0) {
-      const response = await fetch(`${url}/rest/v1/tgi_products`, {
-        method: 'POST',
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates',
-        },
-        body: JSON.stringify(
-          products.map((p) => ({
-            id: p.id,
-            sku: p.sku,
-            name: p.name,
-            category: p.category,
-            normal_price: p.normalPrice,
-            sale_price: p.salePrice,
-            wholesale_min_qty: p.wholesaleMinQty,
-            wholesale_price: p.wholesalePrice,
-            rating: p.rating,
-            sold_count: p.soldCount,
-            stock: p.stock,
-            is_sale: p.isSale,
-            is_promo_grosir: p.isPromoGrosir,
-            image_url: p.imageUrl,
-            material: p.material,
-            dimensions: p.dimensions,
-            weight_grams: p.weightGrams,
-            colors: p.colors,
-            description: p.description,
-            updated_at: p.updatedAt,
-          }))
-        ),
-      });
+      const productRows = products.map((p) => ({
+        id: String(p.id).trim(),
+        sku: String(p.sku).trim(),
+        name: String(p.name).trim(),
+        category: String(p.category || 'Backpack').trim(),
+        normal_price: Math.max(0, Math.round(Number(p.normalPrice) || 0)),
+        sale_price: Math.max(0, Math.round(Number(p.salePrice) || 0)),
+        wholesale_min_qty: Math.max(1, Math.round(Number(p.wholesaleMinQty) || 6)),
+        wholesale_price: Math.max(0, Math.round(Number(p.wholesalePrice) || 0)),
+        rating: Number(p.rating) || 4.9,
+        sold_count: Math.max(0, Math.round(Number(p.soldCount) || 0)),
+        stock: Math.max(0, Math.round(Number(p.stock) ?? 100)),
+        is_sale: Boolean(p.isSale),
+        is_promo_grosir: Boolean(p.isPromoGrosir),
+        image_url: String(p.imageUrl || ''),
+        material: String(p.material || ''),
+        dimensions: String(p.dimensions || ''),
+        weight_grams: Math.max(50, Math.round(Number(p.weightGrams) || 500)),
+        colors: Array.isArray(p.colors) ? p.colors : ['Black'],
+        description: String(p.description || ''),
+        updated_at: p.updatedAt || new Date().toISOString(),
+      }));
 
-      if (!response.ok) {
-        const errText = await response.text();
+      const { error: prodError } = await supabase
+        .from('tgi_products')
+        .upsert(productRows, { onConflict: 'id' });
+
+      if (prodError) {
         return {
           ok: false,
-          message: `Supabase merespons status ${response.status}: ${errText.slice(0, 120)}`,
+          message: `Supabase gagal menyimpan produk: ${prodError.message.slice(0, 120)}`,
         };
       }
     }
@@ -929,8 +1012,8 @@ export async function syncProductsToSupabase(
     const localOrders = orders || getLocalOrders();
     const localReviews = reviews || getLocalReviews();
     const localArticles = articles || getLocalArticles();
+    const localActivityLogs = activityLogs || getLocalActivityLogs();
 
-    // Sync UI, Contact settings, Customer Reviews, Articles & Order Backup inside tgi_site_settings
     const safeStoreMeta = {
       storeName: config.storeName,
       slogan: config.slogan,
@@ -944,15 +1027,8 @@ export async function syncProductsToSupabase(
       hideAdminInHeader: config.hideAdminInHeader,
     };
 
-    await fetch(`${url}/rest/v1/tgi_site_settings`, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates',
-      },
-      body: JSON.stringify([
+    await supabase.from('tgi_site_settings').upsert(
+      [
         {
           id: 'main_ui_config',
           config_json: {
@@ -961,6 +1037,7 @@ export async function syncProductsToSupabase(
             reviews: localReviews,
             ordersBackup: localOrders,
             articles: localArticles,
+            activityLogs: localActivityLogs,
             productExtraMeta: products.map((p) => ({
               id: p.id,
               stockStatus: p.stockStatus,
@@ -969,61 +1046,44 @@ export async function syncProductsToSupabase(
           },
           updated_at: new Date().toISOString(),
         },
-      ]),
-    }).catch(() => {});
+      ],
+      { onConflict: 'id' }
+    );
 
-    // Optional sync to dedicated tgi_articles table if created
     if (localArticles.length > 0) {
-      await fetch(`${url}/rest/v1/tgi_articles`, {
-        method: 'POST',
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates',
-        },
-        body: JSON.stringify(
-          localArticles.map((art) => ({
-            id: art.id,
-            title: art.title,
-            category: art.category,
-            excerpt: art.excerpt,
-            content: art.content,
-            image_url: art.imageUrl,
-            published_at: art.publishedAt,
-            read_time: art.readTime || '4 Menit Baca',
-            author: art.author || 'Tim Edukasi TGI',
-            updated_at: art.updatedAt,
-          }))
-        ),
-      }).catch(() => {});
+      await supabase.from('tgi_articles').upsert(
+        localArticles.map((art) => ({
+          id: String(art.id).trim(),
+          title: String(art.title).trim(),
+          category: String(art.category || 'Strategi Bisnis'),
+          excerpt: String(art.excerpt || ''),
+          content: String(art.content || ''),
+          image_url: String(art.imageUrl || ''),
+          published_at: String(art.publishedAt || ''),
+          read_time: String(art.readTime || '4 Menit Baca'),
+          author: String(art.author || 'Tim Edukasi TGI'),
+          updated_at: art.updatedAt || new Date().toISOString(),
+        })),
+        { onConflict: 'id' }
+      );
     }
 
-    // Optional sync to dedicated tgi_orders table if created
     if (localOrders.length > 0) {
-      await fetch(`${url}/rest/v1/tgi_orders`, {
-        method: 'POST',
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          Prefer: 'resolution=merge-duplicates',
-        },
-        body: JSON.stringify(
-          localOrders.map((ord) => ({
-            id: ord.id,
-            reference_code: ord.referenceCode,
-            customer_name: ord.customerName,
-            customer_city: ord.customerCity,
-            delivery_method: ord.deliveryMethod,
-            voucher_code: ord.voucherCode || '',
-            total_quantity: ord.totalQuantity,
-            total_payable: ord.totalPayable,
-            items_summary: ord.itemsSummary,
-            created_at: ord.createdAt,
-          }))
-        ),
-      }).catch(() => {});
+      await supabase.from('tgi_orders').upsert(
+        localOrders.map((ord) => ({
+          id: String(ord.id).trim(),
+          reference_code: String(ord.referenceCode).trim(),
+          customer_name: String(ord.customerName).trim(),
+          customer_city: String(ord.customerCity || ''),
+          delivery_method: ord.deliveryMethod,
+          voucher_code: String(ord.voucherCode || ''),
+          total_quantity: Math.max(1, Math.round(Number(ord.totalQuantity) || 1)),
+          total_payable: Math.max(0, Math.round(Number(ord.totalPayable) || 0)),
+          items_summary: String(ord.itemsSummary || ''),
+          created_at: ord.createdAt || new Date().toISOString(),
+        })),
+        { onConflict: 'id' }
+      );
     }
 
     return {
@@ -1044,22 +1104,16 @@ export async function deleteProductFromSupabase(
   config: StoreConfig,
   productId: string
 ): Promise<boolean> {
-  const url = config.supabaseUrl.trim().replace(/\/$/, '');
-  const key = config.supabaseAnonKey.trim();
-  if (!url || !key || !productId) return false;
+  const supabase = getSupabaseClient(config);
+  const sanitizedId = (productId || '').trim();
+  if (!supabase || !sanitizedId) return false;
 
   try {
-    const res = await fetch(
-      `${url}/rest/v1/tgi_products?id=eq.${encodeURIComponent(productId)}`,
-      {
-        method: 'DELETE',
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-        },
-      }
-    );
-    return res.ok;
+    const { error } = await supabase
+      .from('tgi_products')
+      .delete()
+      .eq('id', sanitizedId);
+    return !error;
   } catch {
     return false;
   }
@@ -1076,11 +1130,11 @@ export async function fetchCloudBackupFromSupabase(
   reviews?: CustomerReview[];
   orders?: OrderRecord[];
   articles?: BlogArticle[];
+  activityLogs?: AdminActivityLog[];
 }> {
-  const url = config.supabaseUrl.trim().replace(/\/$/, '');
-  const key = config.supabaseAnonKey.trim();
+  const supabase = getSupabaseClient(config);
 
-  if (!url || !key) {
+  if (!supabase) {
     return {
       ok: false,
       message: 'Masukkan Supabase Project URL dan Anon Public Key terlebih dahulu.',
@@ -1088,32 +1142,27 @@ export async function fetchCloudBackupFromSupabase(
   }
 
   try {
-    const [prodRes, settingsRes] = await Promise.all([
-      fetch(`${url}/rest/v1/tgi_products?select=*&order=updated_at.desc`, {
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-        },
-      }),
-      fetch(`${url}/rest/v1/tgi_site_settings?id=eq.main_ui_config&select=*`, {
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-        },
-      }),
+    const [prodResult, settingsResult] = await Promise.all([
+      supabase
+        .from('tgi_products')
+        .select('*')
+        .order('updated_at', { ascending: false }),
+      supabase
+        .from('tgi_site_settings')
+        .select('*')
+        .eq('id', 'main_ui_config')
+        .maybeSingle(),
     ]);
 
-    if (!prodRes.ok) {
-      const errText = await prodRes.text();
+    if (prodResult.error) {
       return {
         ok: false,
-        message: `Gagal memuat tabel tgi_products (${prodRes.status}): ${errText.slice(0, 100)}`,
+        message: `Gagal memuat tabel tgi_products: ${prodResult.error.message.slice(0, 100)}`,
       };
     }
 
-    const rawProducts = await prodRes.json();
-    const rawSettings = settingsRes.ok ? await settingsRes.json() : [];
-    const configBlob = rawSettings?.[0]?.config_json || {};
+    const rawProducts = prodResult.data || [];
+    const configBlob = settingsResult.data?.config_json || {};
     const extraMetaMap = new Map<
       string,
       { stockStatus?: Product['stockStatus']; galleryImages?: string[] }
@@ -1172,6 +1221,9 @@ export async function fetchCloudBackupFromSupabase(
         : [],
       articles: Array.isArray(configBlob.articles)
         ? configBlob.articles
+        : undefined,
+      activityLogs: Array.isArray(configBlob.activityLogs)
+        ? configBlob.activityLogs
         : undefined,
     };
   } catch (err) {

@@ -255,3 +255,22 @@ export interface BlogArticle {
   author?: string;
   updatedAt?: string;
 }
+
+export type AdminActivityType =
+  | 'product'
+  | 'stock'
+  | 'article'
+  | 'category'
+  | 'ui-popup'
+  | 'order-checkout'
+  | 'auth';
+
+export interface AdminActivityLog {
+  id: string;
+  type: AdminActivityType;
+  actionTitle: string;
+  details: string;
+  actor: string;
+  createdAt: string;
+}
+

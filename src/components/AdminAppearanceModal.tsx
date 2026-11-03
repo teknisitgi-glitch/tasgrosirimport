@@ -25,6 +25,9 @@ import {
   Truck,
   Pencil,
   CheckCircle2,
+  ClipboardList,
+  ShieldCheck,
+  Clock,
 } from 'lucide-react';
 import {
   Product,
@@ -44,6 +47,8 @@ import {
   SectionVisibilityConfig,
   BlogArticle,
   WholesalePopupConfig,
+  AdminActivityLog,
+  AdminActivityType,
 } from '../types/product';
 import {
   createHeroLookbookSvg,
@@ -70,7 +75,8 @@ export type AppearanceTab =
   | 'articles'
   | 'layout'
   | 'live'
-  | 'contact';
+  | 'contact'
+  | 'audit-log';
 
 interface AdminAppearanceModalProps {
   isOpen: boolean;
@@ -86,6 +92,8 @@ interface AdminAppearanceModalProps {
   onUpdateArticles?: (nextArticles: BlogArticle[]) => void;
   initialEditArticle?: BlogArticle | null;
   onPreviewWholesalePopup?: () => void;
+  activityLogs?: AdminActivityLog[];
+  onClearActivityLogs?: () => void;
   onClose: () => void;
   onSaveAll: (newUiConfig: UiContentConfig, newStoreConfig: StoreConfig) => void;
   onLiveChange?: (newUiConfig: UiContentConfig, newStoreConfig: StoreConfig) => void;
@@ -130,12 +138,15 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
   onUpdateArticles,
   initialEditArticle = null,
   onPreviewWholesalePopup,
+  activityLogs = [],
+  onClearActivityLogs,
   onClose,
   onSaveAll,
   onLiveChange,
   onResetAll,
 }) => {
   const [activeTab, setActiveTab] = useState<AppearanceTab>(initialTab);
+  const [auditFilter, setAuditFilter] = useState<'all' | AdminActivityType>('all');
   const [draft, setDraft] = useState<UiContentConfig>(uiConfig);
   const [contactDraft, setContactDraft] = useState<StoreConfig>(storeConfig);
   const [selectedSlideIdx, setSelectedSlideIdx] = useState<number>(0);
@@ -857,6 +868,22 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
           >
             <PhoneCall className="w-3.5 h-3.5 text-amber-500" />
             <span>Kontak & PIN</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('audit-log')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              activeTab === 'audit-log'
+                ? 'bg-white text-zinc-950 border-emerald-500 shadow-2xs'
+                : 'text-zinc-600 border-transparent hover:text-zinc-950'
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Log Aktivitas & Stok</span>
+            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono text-[9px] font-extrabold">
+              {activityLogs.length}
+            </span>
           </button>
         </div>
 
@@ -4641,6 +4668,251 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
                       </tbody>
                     </table>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 11: LOG AKTIVITAS ADMIN (AUDIT TRAIL) & MANAJEMEN STOK OTOMATIS */}
+          {activeTab === 'audit-log' && (
+            <div className="space-y-6">
+              <div className="p-4 sm:p-5 rounded-2xl bg-zinc-950 text-white border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>AUDIT TRAIL & REAL-TIME INVENTORY SYNC</span>
+                  </div>
+                  <h3 className="font-display text-lg sm:text-xl font-bold">
+                    Sistem Log Aktivitas Admin & Sinkronisasi Stok Gudang Otomatis
+                  </h3>
+                  <p className="text-xs text-zinc-400 leading-relaxed max-w-2xl">
+                    Setiap penambahan ke keranjang, checkout pesanan WhatsApp, pembaruan stok produk, perubahan harga, atau publikasi artikel tercatat secara otomatis dan tersinkronisasi ke LocalStorage & Supabase.
+                  </p>
+                </div>
+
+                {onClearActivityLogs && activityLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={onClearActivityLogs}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-rose-600 text-zinc-200 hover:text-white text-xs font-bold transition-colors shrink-0 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Bersihkan Log</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Real-Time Warehouse Stock Metrics */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200">
+                  <span className="text-[11px] font-mono uppercase text-zinc-500 font-bold">
+                    Total Model Katalog
+                  </span>
+                  <p className="font-mono text-2xl font-black text-zinc-950 mt-1">
+                    {products.length} SKU
+                  </p>
+                  <span className="text-[11px] text-zinc-500">
+                    Tersinkronisasi otomatis
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200">
+                  <span className="text-[11px] font-mono uppercase text-emerald-800 font-bold">
+                    Total Stok Aktual Gudang
+                  </span>
+                  <p className="font-mono text-2xl font-black text-emerald-900 mt-1">
+                    {products
+                      .reduce((acc, p) => acc + Math.max(0, p.stock || 0), 0)
+                      .toLocaleString('id-ID')}{' '}
+                    pcs
+                  </p>
+                  <span className="text-[11px] text-emerald-700">
+                    Anti-overselling aktif
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200">
+                  <span className="text-[11px] font-mono uppercase text-amber-800 font-bold">
+                    SKU Stok Terbatas (≤25 pcs)
+                  </span>
+                  <p className="font-mono text-2xl font-black text-amber-900 mt-1">
+                    {products.filter((p) => p.stock > 0 && p.stock <= 25).length}{' '}
+                    SKU
+                  </p>
+                  <span className="text-[11px] text-amber-800">
+                    Perlu restock segera
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-rose-50/70 border border-rose-200">
+                  <span className="text-[11px] font-mono uppercase text-rose-800 font-bold">
+                    SKU Stok Habis (0 pcs)
+                  </span>
+                  <p className="font-mono text-2xl font-black text-rose-900 mt-1">
+                    {products.filter((p) => p.stock <= 0).length} SKU
+                  </p>
+                  <span className="text-[11px] text-rose-700">
+                    Otomatis terkunci di katalog
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Restock Panel for Low/Out-of-Stock Products */}
+              {products.some((p) => p.stock <= 25) && (
+                <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-950">
+                      Peringatan Restock Gudang (SKU Stok ≤ 25 pcs)
+                    </h4>
+                    <span className="text-[11px] font-mono font-bold text-amber-800">
+                      Klik +50 Pcs untuk tambah stok instan
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {products
+                      .filter((p) => p.stock <= 25)
+                      .slice(0, 6)
+                      .map((lowProd) => (
+                        <div
+                          key={lowProd.id}
+                          className="p-2.5 rounded-lg bg-white border border-amber-200 flex items-center justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-mono text-[10px] font-bold text-zinc-900 bg-amber-100 px-1.5 py-0.5 rounded">
+                              {lowProd.sku}
+                            </span>
+                            <p className="text-xs font-bold text-zinc-900 truncate mt-0.5">
+                              {lowProd.name}
+                            </p>
+                            <p className="font-mono text-[11px] text-rose-700 font-bold">
+                              Sisa: {lowProd.stock} pcs
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleInlineProductChange(lowProd.id, {
+                                stock: (lowProd.stock || 0) + 50,
+                              })
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-zinc-950 hover:bg-emerald-600 text-white font-mono text-[10px] font-extrabold shrink-0 transition-colors cursor-pointer"
+                          >
+                            +50 Pcs
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Activity Filter & Audit Trail Feed */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-zinc-900 flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-zinc-700" />
+                    <span>Riwayat Aktivitas Admin & Transaksi Stok Terbaru</span>
+                  </h4>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        { id: 'all', label: 'Semua' },
+                        { id: 'stock', label: 'Stok & Inventori' },
+                        { id: 'order-checkout', label: 'Checkout Pembeli' },
+                        { id: 'product', label: 'Produk' },
+                        { id: 'article', label: 'Artikel' },
+                        { id: 'category', label: 'Kategori' },
+                        { id: 'ui-popup', label: 'UI & Pop-Up' },
+                        { id: 'auth', label: 'Sesi Admin' },
+                      ] as const
+                    ).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setAuditFilter(f.id)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                          auditFilter === f.id
+                            ? 'bg-zinc-950 text-amber-400 border-zinc-950'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-900'
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-zinc-200 bg-white divide-y divide-zinc-100 max-h-96 overflow-y-auto">
+                  {activityLogs
+                    .filter((l) =>
+                      auditFilter === 'all' ? true : l.type === auditFilter
+                    )
+                    .map((log) => {
+                      const badgeColors: Record<AdminActivityType, string> = {
+                        stock: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                        'order-checkout':
+                          'bg-sky-100 text-sky-800 border-sky-200',
+                        product:
+                          'bg-amber-100 text-amber-900 border-amber-200',
+                        article:
+                          'bg-purple-100 text-purple-800 border-purple-200',
+                        category:
+                          'bg-indigo-100 text-indigo-800 border-indigo-200',
+                        'ui-popup':
+                          'bg-pink-100 text-pink-800 border-pink-200',
+                        auth: 'bg-zinc-900 text-amber-300 border-zinc-800',
+                      };
+                      const formattedTime = new Date(
+                        log.createdAt
+                      ).toLocaleString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      });
+                      return (
+                        <div
+                          key={log.id}
+                          className="p-3.5 hover:bg-zinc-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span
+                                className={`px-2 py-0.5 rounded font-mono text-[10px] font-extrabold uppercase border ${
+                                  badgeColors[log.type] ||
+                                  'bg-zinc-100 text-zinc-800 border-zinc-200'
+                                }`}
+                              >
+                                {log.type}
+                              </span>
+                              <span className="text-xs sm:text-sm font-bold text-zinc-950">
+                                {log.actionTitle}
+                              </span>
+                            </div>
+                            <p className="text-xs text-zinc-600 leading-relaxed">
+                              {log.details}
+                            </p>
+                          </div>
+
+                          <div className="text-left sm:text-right shrink-0 font-mono text-[11px] text-zinc-500">
+                            <p className="font-bold text-zinc-700">
+                              {log.actor}
+                            </p>
+                            <p>{formattedTime}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {activityLogs.filter((l) =>
+                    auditFilter === 'all' ? true : l.type === auditFilter
+                  ).length === 0 && (
+                    <div className="p-8 text-center text-xs text-zinc-500">
+                      Belum ada catatan aktivitas untuk filter ini.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

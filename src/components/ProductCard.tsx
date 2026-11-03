@@ -203,7 +203,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     });
   };
 
-  const displayImage = getDynamicColorImage();
+  const displayImage = (() => {
+    const raw = getDynamicColorImage();
+    // Automatically append WebP compression query params for Unsplash/CDN URLs
+    if (
+      raw.startsWith('https://images.unsplash.com/') &&
+      !raw.includes('fm=webp')
+    ) {
+      const separator = raw.includes('?') ? '&' : '?';
+      return `${raw}${separator}fm=webp&q=80`;
+    }
+    return raw;
+  })();
+
+  const [isImgLoaded, setIsImgLoaded] = useState(false);
 
   const aspectClass =
     imageAspectRatio === '1:1'
@@ -219,18 +232,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   // Determine Stock Status Label
   const resolvedStockStatus: StockStatusLabel =
-    product.stockStatus ||
-    (product.stock <= 0
+    product.stock <= 0
       ? 'Habis'
       : product.stock <= 25
       ? 'Stok Terbatas'
-      : 'Ready Stock');
+      : product.stockStatus || 'Ready Stock';
 
   const isLowStock =
     resolvedStockStatus === 'Stok Terbatas' ||
-    (product.stock > 0 && product.stock <= 15);
-  const lowStockCount =
-    product.stock > 0 && product.stock <= 15 ? product.stock : 3;
+    (product.stock > 0 && product.stock <= 25);
+  const lowStockCount = product.stock > 0 ? product.stock : 0;
 
   const isBestSeller = Boolean(
     product.isPromoGrosir ||
@@ -247,6 +258,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const handleAddClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (product.stock <= 0 || resolvedStockStatus === 'Habis') return;
     const chosenColor = colorList.includes(activeColor)
       ? activeColor
       : colorList[0] || 'Default';
@@ -447,18 +459,33 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </form>
       )}
 
-      {/* Product Image Container (Zalora Clean Editorial Frame) */}
+      {/* Product Image Container (Zalora Clean Editorial Frame + Lazy Loading) */}
       <div
         className={`relative ${aspectClass} w-full ${
           isContain ? 'bg-zinc-50/70 border-b border-zinc-100' : 'bg-zinc-100'
         } overflow-hidden flex items-center justify-center`}
       >
+        {!isImgLoaded && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-r from-zinc-100 via-zinc-50 to-zinc-100 animate-pulse"
+          />
+        )}
         <img
           src={displayImage}
           alt={`${product.name} (${product.sku}) - ${activeColor}`}
+          loading="lazy"
+          decoding="async"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           referrerPolicy="no-referrer"
-          onError={() => setImgError(true)}
-          className={`w-full h-full ${fitClass} group-hover:scale-108 transition-transform duration-500 ease-out`}
+          onLoad={() => setIsImgLoaded(true)}
+          onError={() => {
+            setImgError(true);
+            setIsImgLoaded(true);
+          }}
+          className={`w-full h-full ${fitClass} group-hover:scale-108 transition-all duration-500 ease-out ${
+            isImgLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
         />
 
         {/* Top-Left: Eye-Friendly Credibility & Warehouse Status Badges */}
@@ -471,7 +498,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {resolvedStockStatus === 'Habis' ? (
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50/95 backdrop-blur-md text-rose-800 border border-rose-200 font-sans text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 shadow-sm">
               <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
-              <span>Stok Gudang Habis</span>
+              <span>Stok Gudang Habis (0 pcs)</span>
             </span>
           ) : isLowStock ? (
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50/95 backdrop-blur-md text-amber-900 border border-amber-300 font-mono text-[10px] font-extrabold px-2.5 py-1 tracking-tight shadow-sm">
@@ -482,7 +509,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50/95 backdrop-blur-md text-emerald-800 border border-emerald-200/90 font-sans text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
               <PackageCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Ready Stock Gudang</span>
+              <span>Ready Stock ({product.stock} pcs)</span>
             </span>
           )}
 

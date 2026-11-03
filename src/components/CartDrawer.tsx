@@ -24,6 +24,7 @@ import {
   calculateCargoEstimates,
   CargoCourierEstimate,
   getColorSwatchHex,
+  formatBuyerWhatsAppNumber,
 } from '../utils/formatters';
 import {
   createBagStudioSvg,
@@ -64,6 +65,13 @@ const QUICK_CARGO_CITIES = [
   'Makassar',
 ];
 
+const QUICK_CARGO_NOTES = [
+  'Packing Karung Double Plastik Aman',
+  'Titip Ekspedisi Langganan Tanah Abang / Kapuk',
+  'Dropship Reseller (Tanpa Label TGI)',
+  'Kirim Cepat via JNE JTR / Indah Cargo',
+];
+
 type BagWeightPreset = 'auto-sku' | '300' | '400' | '500' | 'custom';
 
 const GLOBAL_MOQ_PCS = 6;
@@ -89,6 +97,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   );
   const [selectedCourierId, setSelectedCourierId] =
     useState<CargoCourierEstimate['id']>('jne-jtr');
+  const [cargoCourierNote, setCargoCourierNote] = useState(
+    'Packing Karung Double Plastik Aman'
+  );
   const [weightPreset, setWeightPreset] = useState<BagWeightPreset>('auto-sku');
   const [customAvgWeightGrams, setCustomAvgWeightGrams] = useState<number>(400);
   const [isCalcHighlighted, setIsCalcHighlighted] = useState<boolean>(false);
@@ -140,11 +151,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     cargoEstimates.couriers.find((c) => c.id === selectedCourierId) ||
     cargoEstimates.couriers[0];
 
+  const phoneValidation = formatBuyerWhatsAppNumber(customerPhone);
+
   const orderData = buildWhatsAppOrderText({
     items,
     customerName,
+    customerPhone,
     customerCity,
     deliveryMethod,
+    cargoCourierNote,
     notes,
     voucherCode: voucherInput,
     selectedCargoName:
@@ -205,16 +220,40 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   };
 
+  const isOrderFormValid =
+    Boolean(customerName.trim()) &&
+    phoneValidation.isValid &&
+    Boolean(customerCity.trim());
+
   const handleCheckoutWhatsApp = (bypassValidation = false) => {
-    if (!bypassValidation && !customerName.trim()) {
-      setValidationError(
-        'Mohon isi Nama Pemesan / Toko terlebih dahulu agar Admin TGI dapat langsung memproses nota pesanan Anda.'
-      );
-      return;
+    if (!bypassValidation) {
+      if (!customerName.trim()) {
+        setValidationError(
+          'Mohon isi Nama Pemesan / Toko terlebih dahulu agar Admin TGI dapat langsung memproses nota pesanan Anda.'
+        );
+        return;
+      }
+      if (!phoneValidation.isValid) {
+        setValidationError(
+          `Nomor WhatsApp belum valid (${phoneValidation.validationMessage}). Contoh format benar: 081234567890 atau 6281234567890.`
+        );
+        return;
+      }
+      if (!customerCity.trim()) {
+        setValidationError(
+          'Mohon isi Kota / Kabupaten Tujuan pengiriman untuk kalkulasi ongkir kargo.'
+        );
+        return;
+      }
     }
 
     setValidationError(null);
     setShowOrderPreview(true);
+
+    // Auto-normalize phone display in field
+    if (phoneValidation.displayFormatted) {
+      setCustomerPhone(phoneValidation.displayFormatted);
+    }
 
     const courierPrefix =
       selectedCourier.id === 'indah-cargo'
@@ -235,13 +274,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       id: `ord-${Date.now()}`,
       referenceCode: orderData.orderReference,
       customerName: customerName.trim() || 'Pelanggan Website TGI',
-      customerPhone: customerPhone.trim() || '-',
+      customerPhone:
+        phoneValidation.displayFormatted || customerPhone.trim() || '-',
       customerCity: customerCity.trim() || '-',
       deliveryMethod,
       cargoCourier:
         deliveryMethod === 'pickup'
           ? 'Pickup Langsung Gudang TGI'
-          : selectedCourier.name,
+          : `${selectedCourier.name}${
+              cargoCourierNote.trim() ? ` (${cargoCourierNote.trim()})` : ''
+            }`,
       trackingNumber: generatedResi,
       orderStatus: 'Diproses Gudang',
       totalWeightKg: orderData.totalWeightKg,
@@ -262,7 +304,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
     onRecordOrder?.(newOrder);
     onShowToast?.(
-      `Pesanan #${orderData.orderReference} tercatat! Membuka WhatsApp Admin...`
+      `Pesanan #${orderData.orderReference} tercatat & stok disinkronkan! Membuka WhatsApp Admin...`
     );
   };
 
@@ -882,14 +924,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 )}
               </div>
 
-              {/* Customer Details for WhatsApp Checkout */}
+              {/* Customer Details for WhatsApp Checkout (Order Form + Auto-Format WA) */}
               <div className="p-4 rounded-xl bg-zinc-50 border border-zinc-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-800">
-                    Data Pengiriman WhatsApp
-                  </h3>
-                  <span className="text-[10px] font-semibold text-zinc-500">
-                    Terhubung Otomatis ke WA Admin
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-900">
+                      Formulir Data Pemesan & Kargo WhatsApp
+                    </h3>
+                    <p className="text-[10px] text-zinc-500">
+                      Otomatis merangkum format order profesional ke Admin Sales TGI
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold shrink-0">
+                    Auto-Format WA
                   </span>
                 </div>
 
@@ -909,7 +956,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         onClick={() => handleCheckoutWhatsApp(true)}
                         className="text-[11px] font-bold text-emerald-700 hover:underline"
                       >
-                        Tetap Lanjut ke WhatsApp Tanpa Nama →
+                        Tetap Lanjut Checkout ke WhatsApp →
                       </a>
                     </div>
                   </div>
@@ -927,7 +974,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         setCustomerName(e.target.value);
                         if (validationError) setValidationError(null);
                       }}
-                      placeholder="Contoh: Budi / Toko Berkah"
+                      placeholder="Contoh: Budi / Toko Berkah Tas"
                       className={`w-full px-3 py-2 text-xs rounded-lg border bg-white focus:outline-none ${
                         validationError && !customerName.trim()
                           ? 'border-amber-500 ring-2 ring-amber-400/30'
@@ -936,29 +983,90 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                      No. WhatsApp Pemesan (Untuk Lacak Resi)
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-zinc-700">
+                        No. WhatsApp Pembeli *
+                      </label>
+                      {customerPhone.trim() && (
+                        <span
+                          className={`text-[10px] font-mono font-bold ${
+                            phoneValidation.isValid
+                              ? 'text-emerald-700'
+                              : 'text-amber-700'
+                          }`}
+                        >
+                          {phoneValidation.isValid ? '✓ Valid' : 'Cek Format'}
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="tel"
                       value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onChange={(e) => {
+                        setCustomerPhone(e.target.value);
+                        if (validationError) setValidationError(null);
+                      }}
+                      onBlur={() => {
+                        if (phoneValidation.displayFormatted) {
+                          setCustomerPhone(phoneValidation.displayFormatted);
+                        }
+                      }}
                       placeholder="Contoh: 081234567890"
-                      className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-zinc-300 bg-white focus:border-zinc-900 focus:outline-none"
+                      className={`w-full px-3 py-2 text-xs font-mono rounded-lg border bg-white focus:outline-none ${
+                        customerPhone.trim() && phoneValidation.isValid
+                          ? 'border-emerald-500 focus:border-emerald-600'
+                          : validationError && !phoneValidation.isValid
+                          ? 'border-amber-500 ring-2 ring-amber-400/30'
+                          : 'border-zinc-300 focus:border-zinc-900'
+                      }`}
                     />
+                    {customerPhone.trim() && (
+                      <div className="mt-1 flex items-center justify-between gap-2 text-[10px]">
+                        <span
+                          className={
+                            phoneValidation.isValid
+                              ? 'text-emerald-700 font-medium'
+                              : 'text-amber-700'
+                          }
+                        >
+                          {phoneValidation.isValid
+                            ? `Format WA: ${phoneValidation.displayFormatted}`
+                            : phoneValidation.validationMessage}
+                        </span>
+                        {phoneValidation.displayFormatted &&
+                          customerPhone !== phoneValidation.displayFormatted && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCustomerPhone(phoneValidation.displayFormatted)
+                              }
+                              className="font-mono font-bold text-zinc-900 underline cursor-pointer shrink-0"
+                            >
+                              Rapikan
+                            </button>
+                          )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                    Kota / Kecamatan Tujuan
+                    Kota / Kabupaten Tujuan *
                   </label>
                   <input
                     type="text"
                     value={customerCity}
-                    onChange={(e) => setCustomerCity(e.target.value)}
-                    placeholder="Contoh: Tanah Abang, Jakarta"
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-zinc-300 bg-white focus:border-zinc-900 focus:outline-none"
+                    onChange={(e) => {
+                      setCustomerCity(e.target.value);
+                      if (validationError) setValidationError(null);
+                    }}
+                    placeholder="Contoh: Tanah Abang, Jakarta Pusat / Surabaya"
+                    className={`w-full px-3 py-2 text-xs rounded-lg border bg-white focus:outline-none ${
+                      validationError && !customerCity.trim()
+                        ? 'border-amber-500 ring-2 ring-amber-400/30'
+                        : 'border-zinc-300 focus:border-zinc-900'
+                    }`}
                   />
                 </div>
 
@@ -992,15 +1100,48 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </div>
                 </div>
 
+                {/* Catatan Ekspedisi Kargo Pilihan */}
                 <div>
                   <label className="block text-[11px] font-bold text-zinc-700 mb-1">
-                    Catatan Pesanan (Opsional)
+                    Catatan Ekspedisi Kargo Pilihan
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {QUICK_CARGO_NOTES.map((preset) => {
+                      const active = cargoCourierNote === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setCargoCourierNote(preset)}
+                          className={`px-2 py-1 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
+                            active
+                              ? 'bg-zinc-900 text-amber-300 border-zinc-900'
+                              : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <input
+                    type="text"
+                    value={cargoCourierNote}
+                    onChange={(e) => setCargoCourierNote(e.target.value)}
+                    placeholder="Contoh: Kirim via Indah Cargo / Ekspedisi langganan Tanah Abang"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-zinc-300 bg-white focus:border-zinc-900 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-700 mb-1">
+                    Catatan Tambahan Pesanan (Opsional)
                   </label>
                   <input
                     type="text"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Contoh: Packing karung rapi, kirim via kargo pilihan"
+                    placeholder="Contoh: Mohon dicek resleting & jahitan sebelum dikirim"
                     className="w-full px-3 py-2 text-xs rounded-lg border border-zinc-300 bg-white focus:border-zinc-900 focus:outline-none"
                   />
                 </div>
@@ -1100,7 +1241,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
 
             <div className="flex flex-col gap-2">
-              {customerName.trim() ? (
+              {isOrderFormValid ? (
                 <a
                   href={orderData.whatsappUrl}
                   target="_blank"

@@ -346,11 +346,73 @@ export function calculateCargoEstimates(
   };
 }
 
+export function formatBuyerWhatsAppNumber(raw: string): {
+  rawDigits: string;
+  normalizedInternational: string;
+  displayFormatted: string;
+  isValid: boolean;
+  validationMessage: string;
+} {
+  const digitsOnly = (raw || '').replace(/[^\d]/g, '');
+  if (!digitsOnly) {
+    return {
+      rawDigits: '',
+      normalizedInternational: '',
+      displayFormatted: '',
+      isValid: false,
+      validationMessage: 'Masukkan nomor WhatsApp aktif pembeli',
+    };
+  }
+
+  let normalized = digitsOnly;
+  if (normalized.startsWith('0')) {
+    normalized = `62${normalized.slice(1)}`;
+  } else if (normalized.startsWith('8')) {
+    normalized = `62${normalized}`;
+  }
+
+  const subscriberPart = normalized.startsWith('62')
+    ? normalized.slice(2)
+    : normalized;
+
+  // Format into readable +62 812-3456-7890
+  let displayFormatted = `+62 ${subscriberPart}`;
+  if (subscriberPart.length > 3 && subscriberPart.length <= 7) {
+    displayFormatted = `+62 ${subscriberPart.slice(0, 3)}-${subscriberPart.slice(3)}`;
+  } else if (subscriberPart.length > 7) {
+    displayFormatted = `+62 ${subscriberPart.slice(0, 3)}-${subscriberPart.slice(3, 7)}-${subscriberPart.slice(7, 13)}`;
+  }
+
+  const isValid =
+    normalized.startsWith('628') &&
+    normalized.length >= 10 &&
+    normalized.length <= 15;
+
+  let validationMessage = 'Format nomor WhatsApp valid & siap dihubungi';
+  if (!normalized.startsWith('628')) {
+    validationMessage = 'Gunakan awalan 08xx atau 628xx (nomor seluler Indonesia)';
+  } else if (normalized.length < 10) {
+    validationMessage = 'Nomor WhatsApp terlalu pendek (minimal 10 digit)';
+  } else if (normalized.length > 15) {
+    validationMessage = 'Nomor WhatsApp terlalu panjang (maksimal 15 digit)';
+  }
+
+  return {
+    rawDigits: digitsOnly,
+    normalizedInternational: normalized,
+    displayFormatted,
+    isValid,
+    validationMessage,
+  };
+}
+
 export function buildWhatsAppOrderText(params: {
   items: CartItem[];
   customerName: string;
+  customerPhone?: string;
   customerCity: string;
   deliveryMethod: 'ekspedisi' | 'pickup';
+  cargoCourierNote?: string;
   notes: string;
   voucherCode?: string;
   selectedCargoName?: string;
@@ -376,8 +438,10 @@ export function buildWhatsAppOrderText(params: {
   const {
     items,
     customerName,
+    customerPhone = '',
     customerCity,
     deliveryMethod,
+    cargoCourierNote = '',
     notes,
     voucherCode = '',
     selectedCargoName = '',
@@ -427,6 +491,8 @@ export function buildWhatsAppOrderText(params: {
   const totalSavings = Math.max(0, subtotalItems - totalPayable);
   const cleanPhone = cleanWhatsAppNumber(config.whatsappNumber);
 
+  const phoneFormatted = formatBuyerWhatsAppNumber(customerPhone);
+
   const customGreeting = (
     config.whatsappGreetingTemplate ||
     `Halo Admin *{storeName}*, saya ingin memesan produk berikut:`
@@ -453,16 +519,22 @@ export function buildWhatsAppOrderText(params: {
       : '',
     `========================================`,
     `*Data Pengiriman Pemesan:*`,
-    `• Nama Pemesan / Toko: ${customerName.trim() || 'Pelanggan Website TGI'}`,
-    `• Kota / Kecamatan Tujuan: ${customerCity.trim() || '-'}`,
-    `• Metode Pengiriman: ${
+    `• Nama Pemesan / Toko: *${customerName.trim() || 'Pelanggan Website TGI'}*`,
+    phoneFormatted.displayFormatted
+      ? `• No. WhatsApp Pemesan: *${phoneFormatted.displayFormatted}* (wa.me/${phoneFormatted.normalizedInternational})`
+      : '',
+    `• Kota / Kabupaten Tujuan: *${customerCity.trim() || '-'}*`,
+    `• Metode Pengiriman: *${
       deliveryMethod === 'pickup'
         ? 'Pickup Langsung di Gudang TGI'
         : selectedCargoName
         ? `Ekspedisi Kargo (${selectedCargoName})`
         : 'Kirim via Ekspedisi / Kargo Grosir'
-    }`,
-    notes.trim() ? `• Catatan Tambahan: ${notes.trim()}` : '',
+    }*`,
+    cargoCourierNote.trim()
+      ? `• Catatan Ekspedisi Kargo Pilihan: *${cargoCourierNote.trim()}*`
+      : '',
+    notes.trim() ? `• Catatan Tambahan Pesanan: ${notes.trim()}` : '',
     ``,
     `_Catatan: Untuk pemesanan partai besar / grosir, mohon info harga khusus partai dari Admin Sales._`,
     `Mohon info ketersediaan stok, rincian ongkir final, dan rekening pembayaran. Terima kasih!`,
@@ -652,15 +724,18 @@ export function resolveSocialUrl(
 export function compressImageFileToDataUrl(
   file: File,
   maxWidth: number = 1280,
-  quality: number = 0.8
+  quality: number = 0.82
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Gagal membaca file gambar'));
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      // If it's an SVG or very small image (< 180KB), keep as-is
-      if (file.type === 'image/svg+xml' || dataUrl.length < 180 * 1024) {
+      // If it's an SVG or very small WebP image (< 120KB), keep as-is
+      if (
+        file.type === 'image/svg+xml' ||
+        (file.type === 'image/webp' && dataUrl.length < 120 * 1024)
+      ) {
         resolve(dataUrl);
         return;
       }
@@ -683,8 +758,15 @@ export function compressImageFileToDataUrl(
             return;
           }
           ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL('image/jpeg', quality);
-          resolve(compressed);
+          // Encode to WebP first for superior compression & fast catalog loading
+          const webpCompressed = canvas.toDataURL('image/webp', quality);
+          if (webpCompressed.startsWith('data:image/webp')) {
+            resolve(webpCompressed);
+            return;
+          }
+          // Fallback to JPEG if browser canvas does not support WebP encoding
+          const jpegCompressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(jpegCompressed);
         } catch {
           resolve(dataUrl);
         }

@@ -24,6 +24,7 @@ import {
   Heart,
 } from 'lucide-react';
 import {
+  Product,
   ProductCategory,
   CategoryItem,
   StoreConfig,
@@ -33,6 +34,7 @@ import { DEFAULT_CATEGORIES } from '../services/productService';
 import {
   resolveSocialUrl,
   buildDirectWhatsAppUrl,
+  formatRupiah,
 } from '../utils/formatters';
 import {
   createBagStudioSvg,
@@ -42,6 +44,9 @@ import {
 interface NavbarProps {
   storeName?: string;
   storeConfig?: StoreConfig;
+  products?: Product[];
+  onSelectProduct?: (product: Product) => void;
+  onQuickAddToCart?: (product: Product) => void;
   categories?: CategoryItem[];
   productCountsByCategory?: Record<string, number>;
   totalProductCount?: number;
@@ -326,6 +331,9 @@ type DropdownKey =
 export const Navbar: React.FC<NavbarProps> = ({
   storeName = 'TAS GROSIR IMPORT',
   storeConfig,
+  products = [],
+  onSelectProduct,
+  onQuickAddToCart,
   categories = DEFAULT_CATEGORIES,
   productCountsByCategory = {},
   totalProductCount = 0,
@@ -359,11 +367,57 @@ export const Navbar: React.FC<NavbarProps> = ({
       ? categories
       : DEFAULT_CATEGORIES;
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
   const [activeArticle, setActiveArticle] = useState<ResellerArticle | null>(
     null
   );
+
+  // Smart Search & Auto-Suggest SKU Engine
+  const trimmedSearch = searchQuery.trim().toLowerCase();
+  const smartSuggestions: Product[] = React.useMemo(() => {
+    if (!Array.isArray(products) || products.length === 0) return [];
+    if (!trimmedSearch) {
+      // Show top 4 featured / ready-stock SKUs when user focuses search bar
+      return products.filter((p) => p.stock > 0).slice(0, 4);
+    }
+
+    return products
+      .filter((p) => {
+        const skuMatch = p.sku.toLowerCase().includes(trimmedSearch);
+        const nameMatch = p.name.toLowerCase().includes(trimmedSearch);
+        const catMatch = p.category.toLowerCase().includes(trimmedSearch);
+        const colorMatch = (p.colors || []).some((c) =>
+          c.toLowerCase().includes(trimmedSearch)
+        );
+        return skuMatch || nameMatch || catMatch || colorMatch;
+      })
+      .sort((a, b) => {
+        const aExactSku = a.sku.toLowerCase().startsWith(trimmedSearch) ? 1 : 0;
+        const bExactSku = b.sku.toLowerCase().startsWith(trimmedSearch) ? 1 : 0;
+        if (aExactSku !== bExactSku) return bExactSku - aExactSku;
+        return (b.soldCount || 0) - (a.soldCount || 0);
+      })
+      .slice(0, 6);
+  }, [products, trimmedSearch]);
+
+  const getSuggestionThumbnail = (p: Product): string => {
+    if (p.imageUrl && !p.imageUrl.startsWith('data:image/svg+xml')) {
+      return p.imageUrl;
+    }
+    return createBagStudioSvg({
+      variant:
+        p.category === 'Backpack'
+          ? 'backpack-black'
+          : p.category === 'Handbag'
+          ? 'handbag-taupe'
+          : p.category === 'Shoulder Bag'
+          ? 'shoulder-caramel'
+          : 'grosir-bundle',
+      sku: p.sku,
+    });
+  };
 
   const navContainerRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
@@ -399,12 +453,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         !navContainerRef.current.contains(event.target as Node)
       ) {
         setOpenDropdown(null);
+        setIsSearchFocused(false);
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenDropdown(null);
         setIsQuickMenuOpen(false);
+        setIsSearchFocused(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -602,16 +658,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* ZONA KANAN: Search Bar Minimalis, Wishlist, Shopping Bag & Admin */}
             <div className="flex items-center justify-end gap-2 sm:gap-3 shrink-0">
-              {/* Desktop Search Input (Zalora Underline / Clean Box Style) */}
-              <div className="hidden lg:block relative w-56 xl:w-68">
+              {/* Desktop Search Input + Instant Smart Auto-Suggest SKU Dropdown */}
+              <div className="hidden lg:block relative w-60 xl:w-76">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  placeholder="Cari tas, model, atau SKU..."
+                  onFocus={() => setIsSearchFocused(true)}
+                  onChange={(e) => {
+                    onSearchChange(e.target.value);
+                    setIsSearchFocused(true);
+                  }}
+                  placeholder="Cari nama tas, model, atau SKU..."
                   aria-label="Cari produk atau kode SKU"
-                  className="w-full pl-9 pr-8 py-2 text-xs font-medium bg-zinc-100/90 hover:bg-zinc-100 focus:bg-white text-zinc-900 placeholder:text-zinc-500 border border-zinc-200 focus:border-zinc-950 focus:outline-none transition-colors"
+                  className="w-full pl-9 pr-8 py-2 text-xs font-medium bg-zinc-100/90 hover:bg-zinc-100 focus:bg-white text-zinc-900 placeholder:text-zinc-500 border border-zinc-200 focus:border-zinc-950 rounded-xl focus:outline-none transition-colors"
                 />
                 {searchQuery && (
                   <button
@@ -622,6 +682,120 @@ export const Navbar: React.FC<NavbarProps> = ({
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
+                )}
+
+                {/* Desktop Smart Auto-Suggest SKU Dropdown */}
+                {isSearchFocused && products.length > 0 && (
+                  <div className="absolute right-0 top-full mt-2 w-96 rounded-2xl bg-white border border-zinc-200 shadow-2xl shadow-zinc-950/15 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="px-3.5 py-2.5 bg-zinc-950 text-white flex items-center justify-between border-b border-zinc-800">
+                      <span className="font-mono text-[10px] font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3" />
+                        <span>
+                          {trimmedSearch
+                            ? `Auto-Suggest SKU ("${searchQuery.trim()}")`
+                            : 'Rekomendasi SKU Populer Gudang'}
+                        </span>
+                      </span>
+                      <span className="font-mono text-[10px] text-zinc-400">
+                        {smartSuggestions.length} hasil
+                      </span>
+                    </div>
+
+                    {smartSuggestions.length > 0 ? (
+                      <div className="divide-y divide-zinc-100 max-h-88 overflow-y-auto">
+                        {smartSuggestions.map((item) => (
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              setIsSearchFocused(false);
+                              onSelectProduct?.(item);
+                            }}
+                            className="p-2.5 hover:bg-amber-50/50 transition-colors flex items-center justify-between gap-2.5 cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <img
+                                src={getSuggestionThumbnail(item)}
+                                alt={item.name}
+                                loading="lazy"
+                                decoding="async"
+                                className="w-11 h-11 rounded-lg object-contain bg-zinc-50 border border-zinc-200 p-1 shrink-0 group-hover:scale-105 transition-transform"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-amber-300 font-mono text-[10px] font-bold">
+                                    {item.sku}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-zinc-500 truncate">
+                                    {item.category}
+                                  </span>
+                                  <span
+                                    className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full ${
+                                      item.stock <= 0
+                                        ? 'bg-rose-50 text-rose-700'
+                                        : item.stock <= 25
+                                        ? 'bg-amber-50 text-amber-800'
+                                        : 'bg-emerald-50 text-emerald-700'
+                                    }`}
+                                  >
+                                    {item.stock <= 0
+                                      ? 'Habis'
+                                      : `Stok ${item.stock}`}
+                                  </span>
+                                </div>
+                                <p className="text-xs font-bold text-zinc-900 truncate mt-0.5 group-hover:text-amber-700">
+                                  {item.name}
+                                </p>
+                                <p className="font-mono text-xs font-extrabold text-zinc-950">
+                                  {formatRupiah(item.salePrice)}
+                                </p>
+                              </div>
+                            </div>
+
+                            {onQuickAddToCart && item.stock > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onQuickAddToCart(item);
+                                }}
+                                title="Tambah langsung ke keranjang"
+                                className="px-2.5 py-1.5 rounded-lg bg-zinc-950 hover:bg-emerald-600 text-white text-[10px] font-extrabold uppercase tracking-wider shrink-0 transition-colors cursor-pointer"
+                              >
+                                + Keranjang
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-5 text-center space-y-1">
+                        <p className="text-xs font-bold text-zinc-700">
+                          SKU atau nama tas "{searchQuery}" tidak ditemukan
+                        </p>
+                        <p className="text-[11px] text-zinc-500">
+                          Coba ketik kode awal seperti BP-, HB-, SB-, atau nama bahan.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="px-3.5 py-2 bg-zinc-50 border-t border-zinc-200/80 flex items-center justify-between text-[10px] text-zinc-500">
+                      <span>Klik produk untuk lihat detail & multi-warna</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSearchFocused(false);
+                          const catalogEl =
+                            document.getElementById('katalog-produk');
+                          if (catalogEl) {
+                            catalogEl.scrollIntoView({ behavior: 'smooth' });
+                          }
+                        }}
+                        className="font-bold text-zinc-900 hover:underline cursor-pointer"
+                      >
+                        Lihat di Katalog →
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -720,18 +894,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Expandable Search Bar on Mobile */}
+          {/* Expandable Search Bar + Auto-Suggest SKU on Mobile */}
           {isMobileSearchOpen && (
-            <div className="lg:hidden pb-3 pt-1">
+            <div className="lg:hidden pb-3 pt-1 space-y-2">
               <div className="relative">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => onSearchChange(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onChange={(e) => {
+                    onSearchChange(e.target.value);
+                    setIsSearchFocused(true);
+                  }}
                   placeholder="Ketik nama tas atau kode SKU (contoh: BP-MY-00513)..."
                   autoFocus
-                  className="w-full pl-10 pr-9 py-2.5 text-xs sm:text-sm bg-zinc-100 focus:bg-white text-zinc-900 border border-zinc-300 focus:border-zinc-950 focus:outline-none"
+                  className="w-full pl-10 pr-9 py-2.5 text-xs sm:text-sm bg-zinc-100 focus:bg-white text-zinc-900 rounded-xl border border-zinc-300 focus:border-zinc-950 focus:outline-none"
                 />
                 {searchQuery && (
                   <button
@@ -743,6 +921,59 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </button>
                 )}
               </div>
+
+              {smartSuggestions.length > 0 && (
+                <div className="rounded-xl bg-white border border-zinc-200 shadow-lg overflow-hidden divide-y divide-zinc-100 max-h-72 overflow-y-auto">
+                  {smartSuggestions.map((item) => (
+                    <div
+                      key={`mob-${item.id}`}
+                      onClick={() => {
+                        setIsMobileSearchOpen(false);
+                        onSelectProduct?.(item);
+                      }}
+                      className="p-2.5 hover:bg-amber-50/40 flex items-center justify-between gap-2 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={getSuggestionThumbnail(item)}
+                          alt={item.name}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-10 h-10 rounded-lg object-contain bg-zinc-50 border border-zinc-200 p-1 shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-amber-300 font-mono text-[9px] font-bold">
+                              {item.sku}
+                            </span>
+                            <span className="text-[10px] font-mono text-emerald-700 font-bold">
+                              Stok {item.stock}
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-zinc-900 truncate">
+                            {item.name}
+                          </p>
+                          <p className="font-mono text-[11px] font-extrabold text-zinc-950">
+                            {formatRupiah(item.salePrice)}
+                          </p>
+                        </div>
+                      </div>
+                      {onQuickAddToCart && item.stock > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onQuickAddToCart(item);
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-zinc-950 text-white text-[10px] font-bold shrink-0"
+                        >
+                          + Keranjang
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
