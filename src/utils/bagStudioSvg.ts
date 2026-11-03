@@ -8,7 +8,7 @@
 export interface StudioPreset {
   id: string;
   label: string;
-  category: 'Backpack' | 'Handbag' | 'Shoulder Bag' | 'Promo Grosir';
+  category: string;
   dataUri: string;
 }
 
@@ -279,7 +279,7 @@ export function createBagStudioSvg(options: {
  * to match the selected color variant.
  */
 export function createColorMatchedBagSvg(options: {
-  category: 'Backpack' | 'Handbag' | 'Shoulder Bag' | 'Promo Grosir';
+  category: string;
   sku: string;
   colorName: string;
 }): string {

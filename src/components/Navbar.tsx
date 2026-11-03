@@ -23,7 +23,13 @@ import {
   CheckCircle2,
   Heart,
 } from 'lucide-react';
-import { ProductCategory, StoreConfig } from '../types/product';
+import {
+  ProductCategory,
+  CategoryItem,
+  StoreConfig,
+  BlogArticle,
+} from '../types/product';
+import { DEFAULT_CATEGORIES } from '../services/productService';
 import {
   resolveSocialUrl,
   buildDirectWhatsAppUrl,
@@ -36,6 +42,10 @@ import {
 interface NavbarProps {
   storeName?: string;
   storeConfig?: StoreConfig;
+  categories?: CategoryItem[];
+  productCountsByCategory?: Record<string, number>;
+  totalProductCount?: number;
+  onOpenManageCategories?: () => void;
   activeCategory: ProductCategory;
   onSelectCategory: (cat: ProductCategory) => void;
   onSelectSubCategory?: (
@@ -57,6 +67,10 @@ interface NavbarProps {
   onOpenOrderTracking: () => void;
   onOpenResellerGuide?: () => void;
   resellerGuideMenuLabel?: string;
+  articles?: BlogArticle[];
+  isBlogViewActive?: boolean;
+  onOpenBlogList?: () => void;
+  onSelectArticle?: (article: BlogArticle) => void;
   announcementText?: string;
   showAnnouncementBar?: boolean;
   onEditAnnouncementBar?: () => void;
@@ -304,11 +318,7 @@ const CATEGORIES: ProductCategory[] = [
 type DropdownKey =
   | null
   | 'mega-kategori'
-  | 'cat-Semua'
-  | 'cat-Backpack'
-  | 'cat-Handbag'
-  | 'cat-Shoulder Bag'
-  | 'cat-Promo Grosir'
+  | 'menu-kategori'
   | 'menu-koleksi'
   | 'menu-sosmed'
   | 'menu-blog';
@@ -316,6 +326,10 @@ type DropdownKey =
 export const Navbar: React.FC<NavbarProps> = ({
   storeName = 'TAS GROSIR IMPORT',
   storeConfig,
+  categories = DEFAULT_CATEGORIES,
+  productCountsByCategory = {},
+  totalProductCount = 0,
+  onOpenManageCategories,
   activeCategory,
   onSelectCategory,
   onSelectSubCategory,
@@ -329,6 +343,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenOrderTracking,
   onOpenResellerGuide,
   resellerGuideMenuLabel = 'Panduan Reseller & Syarat Grosir',
+  articles = [],
+  isBlogViewActive = false,
+  onOpenBlogList,
+  onSelectArticle,
   announcementText = 'Harga Grosir Otomatis Min. 6 Pcs (Bebas Campur SKU & Warna)',
   showAnnouncementBar = true,
   onEditAnnouncementBar,
@@ -336,6 +354,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   hideAdminInHeader = false,
   onToggleAdminMode,
 }) => {
+  const effectiveCategories =
+    Array.isArray(categories) && categories.length > 0
+      ? categories
+      : DEFAULT_CATEGORIES;
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isQuickMenuOpen, setIsQuickMenuOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null);
@@ -485,13 +507,27 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
 
               <div className="flex items-center gap-4 shrink-0">
+                {onOpenBlogList && (
+                  <button
+                    type="button"
+                    onClick={onOpenBlogList}
+                    className={`inline-flex items-center gap-1.5 font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                      isBlogViewActive
+                        ? 'text-amber-400 font-bold'
+                        : 'text-zinc-200 hover:text-amber-400'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Artikel & Tips Bisnis</span>
+                  </button>
+                )}
                 {onOpenResellerGuide && (
                   <button
                     type="button"
                     onClick={onOpenResellerGuide}
-                    className="inline-flex items-center gap-1.5 text-zinc-200 hover:text-amber-400 font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                    className="hidden md:inline-flex items-center gap-1.5 text-zinc-200 hover:text-amber-400 font-semibold transition-colors cursor-pointer whitespace-nowrap"
                   >
-                    <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                     <span>{resellerGuideMenuLabel}</span>
                   </button>
                 )}
@@ -731,24 +767,52 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
                 {/* Kolom 1: Kategori & Sub-Kategori Tas */}
                 <div className="space-y-2.5">
-                  <p className="text-xs font-mono uppercase tracking-widest text-amber-400 font-bold">
-                    01. Kategori Utama
-                  </p>
-                  <div className="space-y-1">
-                    {CATEGORIES.map((cat) => (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-mono uppercase tracking-widest text-amber-400 font-bold">
+                      01. Kategori Utama
+                    </p>
+                    {isAdminMode && onOpenManageCategories && (
                       <button
-                        key={cat}
                         type="button"
-                        onClick={() => handleCategoryClick(cat)}
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          onOpenManageCategories();
+                        }}
+                        className="text-[10px] font-mono font-bold text-amber-300 hover:underline cursor-pointer"
+                      >
+                        + Kelola
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => handleCategoryClick('Semua')}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                        activeCategory === 'Semua'
+                          ? 'bg-white text-zinc-950'
+                          : 'bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span>Semua Katalog</span>
+                      <span className="text-[10px] font-mono opacity-70">
+                        {totalProductCount} SKU
+                      </span>
+                    </button>
+                    {effectiveCategories.map((cat) => (
+                      <button
+                        key={cat.id || cat.name}
+                        type="button"
+                        onClick={() => handleCategoryClick(cat.name)}
                         className={`w-full flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                          activeCategory === cat
+                          activeCategory === cat.name
                             ? 'bg-white text-zinc-950'
                             : 'bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
                         }`}
                       >
-                        <span>{cat}</span>
+                        <span>{cat.name}</span>
                         <span className="text-[10px] font-mono opacity-70">
-                          {CATEGORY_DROPDOWN_MAP[cat].length} Sub
+                          {productCountsByCategory[cat.name] ?? 0} SKU
                         </span>
                       </button>
                     ))}
@@ -878,12 +942,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 </div>
 
-                {/* Kolom 4: Artikel & Edukasi Reseller */}
+                {/* Kolom 4: Artikel & Tips Bisnis + Panduan Reseller */}
                 <div className="space-y-2.5">
                   <p className="text-xs font-mono uppercase tracking-widest text-amber-400 font-bold">
-                    04. Panduan & Edukasi Reseller
+                    04. Artikel & Tips Bisnis
                   </p>
                   <div className="space-y-1.5">
+                    {onOpenBlogList && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsQuickMenuOpen(false);
+                          onOpenBlogList();
+                        }}
+                        className="w-full text-left p-2.5 bg-amber-400 hover:bg-amber-300 text-zinc-950 transition-colors cursor-pointer flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <p className="text-xs font-extrabold uppercase tracking-wide">
+                            Artikel & Tips Bisnis (Blog SEO)
+                          </p>
+                          <span className="text-[10px] font-mono font-bold text-zinc-800 block">
+                            Baca Semua Panduan Bisnis & Strategi Reseller ({articles.length || RESELLER_ARTICLES.length} Artikel)
+                          </span>
+                        </div>
+                        <BookOpen className="w-4 h-4 shrink-0" />
+                      </button>
+                    )}
                     {onOpenResellerGuide && (
                       <button
                         type="button"
@@ -891,26 +975,30 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setIsQuickMenuOpen(false);
                           onOpenResellerGuide();
                         }}
-                        className="w-full text-left p-2.5 bg-amber-400 hover:bg-amber-300 text-zinc-950 transition-colors cursor-pointer flex items-center justify-between gap-2"
+                        className="w-full text-left p-2 bg-zinc-900 hover:bg-zinc-800 border border-amber-400/40 text-amber-300 transition-colors cursor-pointer flex items-center justify-between gap-2"
                       >
                         <div>
-                          <p className="text-xs font-extrabold uppercase tracking-wide">
-                            Panduan Reseller & Syarat Grosir
+                          <p className="text-xs font-bold uppercase tracking-wide">
+                            {resellerGuideMenuLabel}
                           </p>
-                          <span className="text-[10px] font-mono font-bold text-zinc-800 block">
+                          <span className="text-[10px] font-mono text-zinc-400 block">
                             Sistem Dropship · Resi Otomatis · Durasi Kargo
                           </span>
                         </div>
-                        <BookOpen className="w-4 h-4 shrink-0" />
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
                       </button>
                     )}
-                    {RESELLER_ARTICLES.map((article) => (
+                    {(articles.length > 0 ? articles.slice(0, 3) : []).map((article) => (
                       <button
                         key={article.id}
                         type="button"
                         onClick={() => {
                           setIsQuickMenuOpen(false);
-                          setActiveArticle(article);
+                          if (onSelectArticle) {
+                            onSelectArticle(article);
+                          } else if (onOpenBlogList) {
+                            onOpenBlogList();
+                          }
                         }}
                         className="w-full text-left p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-colors cursor-pointer group"
                       >
@@ -918,7 +1006,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           {article.title}
                         </p>
                         <span className="text-[10px] font-mono text-zinc-400">
-                          {article.category} · {article.readTime}
+                          {article.category} · {article.publishedAt}
                         </span>
                       </button>
                     ))}
@@ -936,98 +1024,178 @@ export const Navbar: React.FC<NavbarProps> = ({
               aria-label="Navigasi Kategori Utama & Mega Dropdown"
               className="flex items-center justify-start lg:justify-center gap-1 sm:gap-2 overflow-x-auto lg:overflow-visible py-2 no-scrollbar"
             >
-              {/* 1. KATEGORI PRODUK DENGAN DROPDOWN SUB-KATEGORI */}
-              {CATEGORIES.map((category) => {
-                const dropdownKey = `cat-${category}` as DropdownKey;
-                const isActive =
-                  activeCategory === category && !isWishlistFilterActive;
-                const isOpen = openDropdown === dropdownKey;
-                const isPromo = category === 'Promo Grosir';
-                const subItems = CATEGORY_DROPDOWN_MAP[category];
+              {/* 1. DROPDOWN TUNGGAL: KATEGORI (MENCAKUP SEMUA JENIS KATEGORI DINAMIS) */}
+              <div
+                className="relative shrink-0"
+                onMouseEnter={() => handleMouseEnterDropdown('menu-kategori')}
+                onMouseLeave={handleMouseLeaveDropdown}
+              >
+                <button
+                  type="button"
+                  aria-expanded={openDropdown === 'menu-kategori'}
+                  onClick={() => handleToggleDropdownClick('menu-kategori')}
+                  className={`px-3.5 py-1.5 text-xs font-extrabold uppercase tracking-widest transition-all whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer border-b-2 ${
+                    openDropdown === 'menu-kategori' ||
+                    (activeCategory !== 'Semua' && !isWishlistFilterActive && !isBlogViewActive)
+                      ? 'border-zinc-950 text-zinc-950 bg-zinc-100/80'
+                      : 'border-transparent text-zinc-800 hover:text-zinc-950 hover:border-zinc-300'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    Kategori
+                    {activeCategory !== 'Semua' &&
+                    !isWishlistFilterActive &&
+                    !isBlogViewActive
+                      ? `: ${activeCategory}`
+                      : ''}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      openDropdown === 'menu-kategori' ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
 
-                return (
-                  <div
-                    key={category}
-                    className="relative shrink-0"
-                    onMouseEnter={() => handleMouseEnterDropdown(dropdownKey)}
-                    onMouseLeave={handleMouseLeaveDropdown}
-                  >
-                    <div className="inline-flex items-center">
-                      <button
-                        type="button"
-                        onClick={() => handleCategoryClick(category)}
-                        className={`pl-3.5 pr-1.5 py-1.5 text-xs font-extrabold uppercase tracking-widest transition-all whitespace-nowrap cursor-pointer inline-flex items-center gap-1 border-b-2 ${
-                          isActive
-                            ? 'border-zinc-950 text-zinc-950'
-                            : isPromo
-                            ? 'border-transparent text-rose-600 hover:border-rose-600'
-                            : 'border-transparent text-zinc-600 hover:text-zinc-950 hover:border-zinc-300'
-                        }`}
-                      >
-                        <span>{category}</span>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Sub-kategori ${category}`}
-                        aria-expanded={isOpen}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleDropdownClick(dropdownKey);
-                        }}
-                        className={`px-1.5 py-1.5 text-xs transition-all cursor-pointer inline-flex items-center justify-center ${
-                          isActive
-                            ? 'text-zinc-950'
-                            : isPromo
-                            ? 'text-rose-600'
-                            : 'text-zinc-400 hover:text-zinc-950'
-                        }`}
-                      >
-                        <ChevronDown
-                          className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                            isOpen ? 'rotate-180' : ''
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                    {/* Desktop Dropdown Panel per Category */}
-                    {isOpen && (
-                      <div className="hidden lg:block absolute left-0 top-full pt-2 w-80 z-50 animate-in fade-in duration-150">
-                        <div className="bg-white border border-zinc-200 shadow-2xl p-3 space-y-1">
-                          <div className="px-2.5 py-1.5 border-b border-zinc-100 flex items-center justify-between">
-                            <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-400">
-                              Sub-Kategori {category}
-                            </span>
-                            <Layers className="w-3.5 h-3.5 text-zinc-900" />
-                          </div>
-                          {subItems.map((item) => (
-                            <button
-                              key={item.label}
-                              type="button"
-                              onClick={() => handleSubCategorySelect(item)}
-                              className="w-full text-left px-3 py-2.5 hover:bg-zinc-50 transition-colors flex items-start justify-between gap-2 group cursor-pointer"
-                            >
-                              <div className="min-w-0">
-                                <p className="text-xs font-bold text-zinc-900 group-hover:text-zinc-950">
-                                  {item.label}
-                                </p>
-                                <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5">
-                                  {item.description}
-                                </p>
-                              </div>
-                              {item.badge && (
-                                <span className="shrink-0 px-1.5 py-0.5 bg-zinc-950 text-white font-mono text-[10px] font-bold uppercase">
-                                  {item.badge}
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
+                {/* Desktop Dropdown Panel untuk Seluruh Kategori */}
+                {openDropdown === 'menu-kategori' && (
+                  <div className="hidden lg:block absolute left-0 top-full pt-2 w-88 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white border border-zinc-200 shadow-2xl p-3 space-y-1 max-h-[75vh] overflow-y-auto">
+                      <div className="px-2.5 py-1.5 border-b border-zinc-100 flex items-center justify-between">
+                        <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-500">
+                          Daftar Kategori Produk ({effectiveCategories.length})
+                        </span>
+                        <Layers className="w-3.5 h-3.5 text-amber-600" />
                       </div>
-                    )}
+
+                      {/* Opsi Utama: Semua Katalog Produk */}
+                      <button
+                        type="button"
+                        onClick={() => handleCategoryClick('Semua')}
+                        className={`w-full text-left px-3 py-2.5 transition-colors flex items-start justify-between gap-2 group cursor-pointer ${
+                          activeCategory === 'Semua' && !isWishlistFilterActive
+                            ? 'bg-zinc-950 text-white'
+                            : 'hover:bg-zinc-50 text-zinc-900'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p
+                            className={`text-xs font-extrabold uppercase tracking-wide ${
+                              activeCategory === 'Semua' && !isWishlistFilterActive
+                                ? 'text-amber-400'
+                                : 'text-zinc-900 group-hover:text-zinc-950'
+                            }`}
+                          >
+                            Semua Katalog Produk
+                          </p>
+                          <p
+                            className={`text-[11px] line-clamp-1 mt-0.5 ${
+                              activeCategory === 'Semua' && !isWishlistFilterActive
+                                ? 'text-zinc-300'
+                                : 'text-zinc-500'
+                            }`}
+                          >
+                            Tampilkan seluruh koleksi tas import siap kirim ({totalProductCount} SKU)
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                            activeCategory === 'Semua' && !isWishlistFilterActive
+                              ? 'bg-amber-400 text-zinc-950'
+                              : 'bg-zinc-100 text-zinc-700'
+                          }`}
+                        >
+                          Semua
+                        </span>
+                      </button>
+
+                      {/* Daftar Seluruh Kategori Dinamis */}
+                      {effectiveCategories.map((cat) => {
+                        const isSelected =
+                          activeCategory === cat.name && !isWishlistFilterActive;
+                        const isPromo =
+                          cat.name.toLowerCase().includes('promo') ||
+                          cat.name.toLowerCase().includes('sale');
+                        const skuCount = productCountsByCategory[cat.name] ?? 0;
+
+                        return (
+                          <button
+                            key={cat.id || cat.name}
+                            type="button"
+                            onClick={() => handleCategoryClick(cat.name)}
+                            className={`w-full text-left px-3 py-2.5 transition-colors flex items-start justify-between gap-2 group cursor-pointer ${
+                              isSelected
+                                ? 'bg-zinc-950 text-white'
+                                : 'hover:bg-zinc-50 text-zinc-900'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p
+                                  className={`text-xs font-bold ${
+                                    isSelected
+                                      ? 'text-amber-400'
+                                      : isPromo
+                                      ? 'text-rose-600 group-hover:text-rose-700'
+                                      : 'text-zinc-900 group-hover:text-zinc-950'
+                                  }`}
+                                >
+                                  {cat.name}
+                                </p>
+                                <span
+                                  className={`text-[10px] font-mono ${
+                                    isSelected ? 'text-zinc-400' : 'text-zinc-400'
+                                  }`}
+                                >
+                                  ({skuCount})
+                                </span>
+                              </div>
+                              <p
+                                className={`text-[11px] line-clamp-1 mt-0.5 ${
+                                  isSelected ? 'text-zinc-300' : 'text-zinc-500'
+                                }`}
+                              >
+                                {cat.description ||
+                                  `Koleksi produk ${cat.name} import tangan pertama`}
+                              </p>
+                            </div>
+                            {cat.badge && (
+                              <span
+                                className={`shrink-0 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+                                  isSelected
+                                    ? 'bg-amber-400 text-zinc-950'
+                                    : isPromo
+                                    ? 'bg-rose-600 text-white'
+                                    : 'bg-zinc-950 text-white'
+                                }`}
+                              >
+                                {cat.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+
+                      {/* Shortcut Admin: Kelola Kategori */}
+                      {isAdminMode && onOpenManageCategories && (
+                        <div className="pt-2 mt-1 border-t border-zinc-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdown(null);
+                              onOpenManageCategories();
+                            }}
+                            className="w-full px-3 py-2 bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-extrabold uppercase tracking-wider flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <span>+ Kelola / Tambah Kategori Baru</span>
+                            <Layers className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
+                )}
+              </div>
 
               <span className="hidden sm:inline-block h-4 w-px bg-zinc-200 mx-2 shrink-0" />
 
@@ -1300,7 +1468,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 )}
               </div>
 
-              {/* 4. DROPDOWN: BLOG & PANDUAN RESELLER */}
+              {/* 4. DROPDOWN: ARTIKEL & TIPS BISNIS + PANDUAN RESELLER */}
               <div
                 className="relative shrink-0"
                 onMouseEnter={() => handleMouseEnterDropdown('menu-blog')}
@@ -1309,15 +1477,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   aria-expanded={openDropdown === 'menu-blog'}
-                  onClick={() => handleToggleDropdownClick('menu-blog')}
+                  onClick={() => {
+                    if (onOpenBlogList) {
+                      setOpenDropdown(null);
+                      onOpenBlogList();
+                    } else {
+                      handleToggleDropdownClick('menu-blog');
+                    }
+                  }}
                   className={`px-3 py-1.5 text-xs font-extrabold uppercase tracking-widest transition-all whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer border-b-2 ${
-                    openDropdown === 'menu-blog'
-                      ? 'border-zinc-950 text-zinc-950'
+                    isBlogViewActive || openDropdown === 'menu-blog'
+                      ? 'border-zinc-950 text-zinc-950 bg-amber-50/70'
                       : 'border-transparent text-zinc-700 hover:text-zinc-950'
                   }`}
                 >
-                  <BookOpen className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-                  <span>Panduan Reseller & Syarat Grosir</span>
+                  <BookOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Artikel & Tips Bisnis</span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 transition-transform duration-200 ${
                       openDropdown === 'menu-blog' ? 'rotate-180' : ''
@@ -1326,14 +1501,72 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
 
                 {openDropdown === 'menu-blog' && (
-                  <div className="hidden lg:block absolute right-0 top-full pt-2 w-88 z-50 animate-in fade-in duration-150">
-                    <div className="bg-white border border-zinc-200 shadow-2xl p-3 space-y-1.5">
+                  <div className="hidden lg:block absolute right-0 top-full pt-2 w-92 z-50 animate-in fade-in duration-150">
+                    <div className="bg-white border border-zinc-200 shadow-2xl p-3 space-y-2">
                       <div className="px-2.5 py-1.5 border-b border-zinc-100 flex items-center justify-between">
-                        <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-400">
-                          Panduan Reseller, Dropship & Grosir
+                        <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-500">
+                          Artikel & Tips Bisnis (Blog SEO)
                         </span>
-                        <BookOpen className="w-3.5 h-3.5 text-zinc-900" />
+                        <BookOpen className="w-3.5 h-3.5 text-amber-600" />
                       </div>
+
+                      {onOpenBlogList && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenDropdown(null);
+                            onOpenBlogList();
+                          }}
+                          className="w-full text-left p-3 bg-amber-400 hover:bg-amber-300 text-zinc-950 transition-colors flex items-center justify-between gap-2.5 cursor-pointer"
+                        >
+                          <div>
+                            <span className="inline-block px-1.5 py-0.5 bg-zinc-950 text-amber-300 font-mono text-[9px] font-extrabold uppercase mb-0.5">
+                              BLOG & EDUKASI BISNIS
+                            </span>
+                            <p className="text-xs font-black text-zinc-950">
+                              Buka Halaman Daftar Artikel Lengkap ({articles.length})
+                            </p>
+                            <p className="text-[11px] text-zinc-800 leading-snug">
+                              Tips kulakan tas import, hemat ongkir kargo & tren produk laris
+                            </p>
+                          </div>
+                          <ArrowUpRight className="w-4 h-4 text-zinc-950 shrink-0" />
+                        </button>
+                      )}
+
+                      {(articles.length > 0 ? articles.slice(0, 3) : []).map((article) => (
+                        <button
+                          key={article.id}
+                          type="button"
+                          onClick={() => {
+                            setOpenDropdown(null);
+                            if (onSelectArticle) {
+                              onSelectArticle(article);
+                            } else if (onOpenBlogList) {
+                              onOpenBlogList();
+                            }
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-zinc-50 transition-colors flex items-start gap-2.5 group cursor-pointer"
+                        >
+                          <img
+                            src={article.imageUrl}
+                            alt={article.title}
+                            referrerPolicy="no-referrer"
+                            className="w-12 h-12 object-cover shrink-0 border border-zinc-200 bg-zinc-100"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <span className="inline-block text-[10px] font-mono font-bold uppercase text-amber-700">
+                              {article.category} · {article.publishedAt}
+                            </span>
+                            <p className="text-xs font-bold text-zinc-900 group-hover:text-zinc-950 line-clamp-1">
+                              {article.title}
+                            </p>
+                            <p className="text-[11px] text-zinc-500 line-clamp-1">
+                              Baca Selengkapnya →
+                            </p>
+                          </div>
+                        </button>
+                      ))}
 
                       {onOpenResellerGuide && (
                         <button
@@ -1342,74 +1575,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                             setOpenDropdown(null);
                             onOpenResellerGuide();
                           }}
-                          className="w-full text-left p-3 bg-zinc-950 hover:bg-zinc-900 text-white transition-colors flex items-start justify-between gap-2.5 cursor-pointer"
+                          className="w-full text-left p-2.5 bg-zinc-950 hover:bg-zinc-900 text-white transition-colors flex items-center justify-between gap-2 cursor-pointer"
                         >
-                          <div className="space-y-0.5">
-                            <span className="inline-block px-1.5 py-0.5 bg-amber-400 text-zinc-950 font-mono text-[9px] font-extrabold uppercase">
-                              WAJIB BACA MITRA
-                            </span>
+                          <div>
                             <p className="text-xs font-bold text-amber-400">
-                              Panduan Reseller & Syarat Grosir Lengkap
+                              {resellerGuideMenuLabel}
                             </p>
-                            <p className="text-[11px] text-zinc-300 leading-snug">
-                              Cara kerja Dropship, Resi Otomatis Marketplace & Estimasi Durasi Kargo se-Indonesia
+                            <p className="text-[10px] text-zinc-300">
+                              Dropship, Resi Otomatis Marketplace & Tabel Kargo
                             </p>
                           </div>
-                          <BookOpen className="w-4 h-4 text-amber-400 shrink-0 mt-1" />
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         </button>
                       )}
-
-                      {RESELLER_ARTICLES.map((article) => (
-                        <button
-                          key={article.id}
-                          type="button"
-                          onClick={() => {
-                            setOpenDropdown(null);
-                            setActiveArticle(article);
-                          }}
-                          className="w-full text-left px-3 py-2 hover:bg-zinc-50 transition-colors flex items-start gap-2.5 group cursor-pointer"
-                        >
-                          <img
-                            src={article.image}
-                            alt={article.title}
-                            referrerPolicy="no-referrer"
-                            className="w-12 h-12 object-cover shrink-0 border border-zinc-200 bg-zinc-100"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <span className="inline-block text-[10px] font-mono font-bold uppercase text-zinc-500">
-                              {article.category}
-                            </span>
-                            <p className="text-xs font-bold text-zinc-900 group-hover:text-zinc-950 line-clamp-1">
-                              {article.title}
-                            </p>
-                            <p className="text-[11px] text-zinc-500 line-clamp-1">
-                              {article.readTime} · Baca selengkapnya
-                            </p>
-                          </div>
-                        </button>
-                      ))}
-
-                      <div className="pt-1.5 border-t border-zinc-100 grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOpenDropdown(null);
-                            onOpenOrderTracking();
-                          }}
-                          className="px-2.5 py-2 bg-zinc-950 hover:bg-zinc-800 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Truck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          <span>Cek Resi Kargo</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => scrollToSection('ulasan-pelanggan')}
-                          className="px-2.5 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Star className="w-3.5 h-3.5 text-zinc-900 shrink-0" />
-                          <span>Testimoni Mitra</span>
-                        </button>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -1423,8 +1601,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="max-w-7xl mx-auto space-y-2">
                 <div className="flex items-center justify-between pb-1 border-b border-zinc-100">
                   <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-500">
-                    {openDropdown.startsWith('cat-')
-                      ? `Sub-Kategori ${openDropdown.replace('cat-', '')}`
+                    {openDropdown === 'menu-kategori'
+                      ? `Pilih Kategori Produk (${effectiveCategories.length})`
                       : openDropdown === 'menu-koleksi'
                       ? 'Koleksi Terbaru & Diskon Grosir'
                       : openDropdown === 'menu-sosmed'
@@ -1440,32 +1618,95 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </button>
                 </div>
 
-                {openDropdown.startsWith('cat-') && (
+                {openDropdown === 'menu-kategori' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {CATEGORY_DROPDOWN_MAP[
-                      openDropdown.replace('cat-', '') as ProductCategory
-                    ]?.map((item) => (
+                    <button
+                      type="button"
+                      onClick={() => handleCategoryClick('Semua')}
+                      className={`text-left p-2.5 border flex items-center justify-between gap-2 ${
+                        activeCategory === 'Semua' && !isWishlistFilterActive
+                          ? 'bg-zinc-950 text-white border-zinc-950'
+                          : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-200 text-zinc-900'
+                      }`}
+                    >
+                      <div>
+                        <p
+                          className={`text-xs font-bold ${
+                            activeCategory === 'Semua' && !isWishlistFilterActive
+                              ? 'text-amber-400'
+                              : 'text-zinc-900'
+                          }`}
+                        >
+                          Semua Katalog Produk
+                        </p>
+                        <p
+                          className={`text-[11px] ${
+                            activeCategory === 'Semua' && !isWishlistFilterActive
+                              ? 'text-zinc-300'
+                              : 'text-zinc-500'
+                          }`}
+                        >
+                          Seluruh koleksi tas import ({totalProductCount} SKU)
+                        </p>
+                      </div>
+                      <span className="px-1.5 py-0.5 bg-amber-400 text-zinc-950 font-mono text-[10px] font-bold uppercase shrink-0">
+                        Semua
+                      </span>
+                    </button>
+
+                    {effectiveCategories.map((cat) => {
+                      const isSelected =
+                        activeCategory === cat.name && !isWishlistFilterActive;
+                      const skuCount = productCountsByCategory[cat.name] ?? 0;
+                      return (
+                        <button
+                          key={cat.id || cat.name}
+                          type="button"
+                          onClick={() => handleCategoryClick(cat.name)}
+                          className={`text-left p-2.5 border flex items-center justify-between gap-2 ${
+                            isSelected
+                              ? 'bg-zinc-950 text-white border-zinc-950'
+                              : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-200 text-zinc-900'
+                          }`}
+                        >
+                          <div>
+                            <p
+                              className={`text-xs font-bold ${
+                                isSelected ? 'text-amber-400' : 'text-zinc-900'
+                              }`}
+                            >
+                              {cat.name} ({skuCount})
+                            </p>
+                            <p
+                              className={`text-[11px] line-clamp-1 ${
+                                isSelected ? 'text-zinc-300' : 'text-zinc-500'
+                              }`}
+                            >
+                              {cat.description || `Koleksi ${cat.name} import`}
+                            </p>
+                          </div>
+                          {cat.badge && (
+                            <span className="px-1.5 py-0.5 bg-zinc-950 text-white font-mono text-[10px] font-bold uppercase shrink-0">
+                              {cat.badge}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+
+                    {isAdminMode && onOpenManageCategories && (
                       <button
-                        key={item.label}
                         type="button"
-                        onClick={() => handleSubCategorySelect(item)}
-                        className="text-left p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 flex items-center justify-between gap-2"
+                        onClick={() => {
+                          setOpenDropdown(null);
+                          onOpenManageCategories();
+                        }}
+                        className="sm:col-span-2 text-left p-2.5 bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-xs uppercase tracking-wider flex items-center justify-between"
                       >
-                        <div>
-                          <p className="text-xs font-bold text-zinc-900">
-                            {item.label}
-                          </p>
-                          <p className="text-[11px] text-zinc-500">
-                            {item.description}
-                          </p>
-                        </div>
-                        {item.badge && (
-                          <span className="px-1.5 py-0.5 bg-zinc-950 text-white font-mono text-[10px] font-bold uppercase shrink-0">
-                            {item.badge}
-                          </span>
-                        )}
+                        <span>+ Kelola / Tambah Kategori Baru (Admin)</span>
+                        <Layers className="w-4 h-4" />
                       </button>
-                    ))}
+                    )}
                   </div>
                 )}
 
@@ -1555,6 +1796,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                 {openDropdown === 'menu-blog' && (
                   <div className="space-y-1.5">
+                    {onOpenBlogList && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpenDropdown(null);
+                          onOpenBlogList();
+                        }}
+                        className="w-full text-left p-2.5 bg-amber-400 text-zinc-950 border border-amber-500 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-zinc-950">
+                            Semua Artikel & Tips Bisnis ({articles.length})
+                          </p>
+                          <p className="text-[11px] text-zinc-800">
+                            Buka halaman daftar artikel & blog edukasi reseller
+                          </p>
+                        </div>
+                        <BookOpen className="w-4 h-4 text-zinc-950 shrink-0" />
+                      </button>
+                    )}
                     {onOpenResellerGuide && (
                       <button
                         type="button"
@@ -1566,22 +1827,26 @@ export const Navbar: React.FC<NavbarProps> = ({
                       >
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-amber-400">
-                            Panduan Reseller & Syarat Grosir
+                            {resellerGuideMenuLabel}
                           </p>
                           <p className="text-[11px] text-zinc-300">
                             Sistem Dropship, Resi Otomatis Marketplace & Kargo
                           </p>
                         </div>
-                        <BookOpen className="w-4 h-4 text-amber-400 shrink-0" />
+                        <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
                       </button>
                     )}
-                    {RESELLER_ARTICLES.map((article) => (
+                    {(articles.length > 0 ? articles : []).map((article) => (
                       <button
                         key={article.id}
                         type="button"
                         onClick={() => {
                           setOpenDropdown(null);
-                          setActiveArticle(article);
+                          if (onSelectArticle) {
+                            onSelectArticle(article);
+                          } else if (onOpenBlogList) {
+                            onOpenBlogList();
+                          }
                         }}
                         className="w-full text-left p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 flex items-center justify-between gap-2"
                       >
@@ -1590,7 +1855,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             {article.title}
                           </p>
                           <p className="text-[11px] text-zinc-500">
-                            {article.category} · {article.readTime}
+                            {article.category} · {article.publishedAt}
                           </p>
                         </div>
                         <BookOpen className="w-4 h-4 text-zinc-700 shrink-0" />

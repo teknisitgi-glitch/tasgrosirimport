@@ -40,16 +40,19 @@ import {
   Heart,
   Filter,
   BookOpen,
+  Layers,
 } from 'lucide-react';
 import {
   Product,
   ProductCategory,
+  CategoryItem,
   StockStatusLabel,
   CartItem,
   StoreConfig,
   UiContentConfig,
   CustomerReview,
   OrderRecord,
+  BlogArticle,
 } from './types/product';
 import {
   getLocalProducts,
@@ -67,6 +70,10 @@ import {
   getLocalOrders,
   saveLocalOrder,
   saveAllLocalOrders,
+  getLocalArticles,
+  saveLocalArticles,
+  resetLocalArticles,
+  DEFAULT_CATEGORIES,
   SUPABASE_SQL_SCHEMA,
   syncProductsToSupabase,
   deleteProductFromSupabase,
@@ -89,6 +96,8 @@ import {
   AppearanceTab,
 } from './components/AdminAppearanceModal';
 import { ResellerGuideModal } from './components/ResellerGuideModal';
+import { WholesalePromoPopupModal } from './components/WholesalePromoPopupModal';
+import { BlogSectionPage } from './components/BlogSectionPage';
 import { STUDIO_PRESETS, createBagStudioSvg } from './utils/bagStudioSvg';
 import {
   formatRupiah,
@@ -142,6 +151,14 @@ export default function App() {
     getLocalReviews()
   );
   const [orders, setOrders] = useState<OrderRecord[]>(() => getLocalOrders());
+  const [articles, setArticles] = useState<BlogArticle[]>(() =>
+    getLocalArticles()
+  );
+  const [activeView, setActiveView] = useState<'catalog' | 'blog'>('catalog');
+  const [selectedBlogArticle, setSelectedBlogArticle] =
+    useState<BlogArticle | null>(null);
+  const [adminEditingArticle, setAdminEditingArticle] =
+    useState<BlogArticle | null>(null);
   const [appliedVoucher, setAppliedVoucher] = useState<string>('');
 
   // Filter & Search State
@@ -200,6 +217,16 @@ export default function App() {
     useState<AppearanceTab>('hero');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastShowCartBtn, setToastShowCartBtn] = useState<boolean>(false);
+  const [toastKey, setToastKey] = useState<number>(0);
+  const [toastCartMeta, setToastCartMeta] = useState<{
+    productName: string;
+    sku: string;
+    colorLabel: string;
+    sizeLabel: string;
+    quantity: number;
+    unitPrice: number;
+    imageUrl: string;
+  } | null>(null);
   const [confirmResetInline, setConfirmResetInline] = useState<boolean>(false);
 
   // Admin Product Form State
@@ -240,6 +267,10 @@ export default function App() {
   const [isOrderTrackingOpen, setIsOrderTrackingOpen] = useState<boolean>(false);
   // Panduan Reseller & Syarat Grosir Modal State
   const [isResellerGuideOpen, setIsResellerGuideOpen] = useState<boolean>(false);
+  // Automatic Wholesale Promo Banner Pop-Up State (Opens automatically on page load / refresh if enabled)
+  const [isWholesalePromoOpen, setIsWholesalePromoOpen] = useState<boolean>(
+    () => getUiContentConfig().wholesalePopup?.enabled !== false
+  );
 
   // Store Settings & Supabase Sync State
   const [configDraft, setConfigDraft] = useState<StoreConfig>(storeConfig);
@@ -278,6 +309,10 @@ export default function App() {
           setOrders(res.orders);
           saveAllLocalOrders(res.orders);
         }
+        if (Array.isArray(res.articles) && res.articles.length > 0) {
+          setArticles(res.articles);
+          saveLocalArticles(res.articles);
+        }
       })
       .catch(() => {})
       .finally(() => {
@@ -306,6 +341,11 @@ export default function App() {
     saveStoreConfig(storeConfig);
   }, [storeConfig]);
 
+  // Persist articles to localStorage whenever modified
+  useEffect(() => {
+    saveLocalArticles(articles);
+  }, [articles]);
+
   // Persist cart to localStorage
   useEffect(() => {
     try {
@@ -333,11 +373,31 @@ export default function App() {
     }
   }, [isAdminMode]);
 
-  const showToast = (msg: string, withCartButton: boolean = false) => {
+  const showToast = (
+    msg: string,
+    withCartButton: boolean = false,
+    cartMeta: {
+      productName: string;
+      sku: string;
+      colorLabel: string;
+      sizeLabel: string;
+      quantity: number;
+      unitPrice: number;
+      imageUrl: string;
+    } | null = null
+  ) => {
     setToastMessage(msg);
     setToastShowCartBtn(withCartButton);
+    setToastCartMeta(cartMeta);
+    setToastKey((prev) => prev + 1);
     window.setTimeout(() => {
-      setToastMessage((prev) => (prev === msg ? null : prev));
+      setToastMessage((prev) => {
+        if (prev === msg) {
+          setToastCartMeta(null);
+          return null;
+        }
+        return prev;
+      });
     }, 3600);
   };
 
@@ -352,6 +412,63 @@ export default function App() {
         : `♥ ${product.name} disimpan ke Wishlist Anda!`
     );
   };
+
+  // Dynamic Categories List (synced with uiConfig.categories & products)
+  const dynamicCategories = useMemo<CategoryItem[]>(() => {
+    const base =
+      Array.isArray(uiConfig.categories) && uiConfig.categories.length > 0
+        ? uiConfig.categories
+        : DEFAULT_CATEGORIES;
+    const map = new Map<string, CategoryItem>();
+    base.forEach((cat) => {
+      if (cat && cat.name && cat.name !== 'Semua') {
+        map.set(cat.name, cat);
+      }
+    });
+    // Ensure any custom category assigned to existing products is also represented
+    products.forEach((p) => {
+      const cName = (p.category || '').trim();
+      if (cName && cName !== 'Semua' && !map.has(cName)) {
+        map.set(cName, {
+          id: `cat-prod-${cName.toLowerCase().replace(/\s+/g, '-')}`,
+          name: cName,
+          description: `Koleksi produk ${cName} import tangan pertama`,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [uiConfig.categories, products]);
+
+  const editableCategoryNames = useMemo<string[]>(() => {
+    const names = dynamicCategories.map((c) => c.name);
+    return names.length > 0 ? names : EDITABLE_CATEGORIES;
+  }, [dynamicCategories]);
+
+  const productCountsByCategory = useMemo<Record<string, number>>(() => {
+    const counts: Record<string, number> = {};
+    dynamicCategories.forEach((cat) => {
+      if (cat.name === 'Promo Grosir') {
+        counts[cat.name] = products.filter(
+          (p) => p.category === 'Promo Grosir' || p.isPromoGrosir
+        ).length;
+      } else {
+        counts[cat.name] = products.filter(
+          (p) => p.category === cat.name
+        ).length;
+      }
+    });
+    return counts;
+  }, [dynamicCategories, products]);
+
+  // Reset activeCategory to 'Semua' if the selected category was deleted
+  useEffect(() => {
+    if (
+      activeCategory !== 'Semua' &&
+      !dynamicCategories.some((c) => c.name === activeCategory)
+    ) {
+      setActiveCategory('Semua');
+    }
+  }, [activeCategory, dynamicCategories]);
 
   // Extract unique available colors across products for Sidebar Color Filter
   const availableColors = useMemo(() => {
@@ -511,7 +628,16 @@ export default function App() {
     });
     showToast(
       `${product.sku} (${color} · ${resolvedSize}) ditambahkan ke Keranjang!`,
-      true
+      true,
+      {
+        productName: product.name,
+        sku: product.sku,
+        colorLabel: color,
+        sizeLabel: resolvedSize,
+        quantity: qtyToAdd,
+        unitPrice: product.salePrice,
+        imageUrl: product.imageUrl,
+      }
     );
   };
 
@@ -562,7 +688,16 @@ export default function App() {
 
     showToast(
       `Batch ${totalAdded} pcs ${product.sku} (${colorSummary}) berhasil masuk Keranjang!`,
-      true
+      true,
+      {
+        productName: product.name,
+        sku: product.sku,
+        colorLabel: colorSummary,
+        sizeLabel: resolvedSize,
+        quantity: totalAdded,
+        unitPrice: product.salePrice,
+        imageUrl: product.imageUrl,
+      }
     );
   };
 
@@ -622,7 +757,12 @@ export default function App() {
     setEditingProduct(null);
     setFormName('');
     setFormSku(defaultSku);
-    setFormCategory('Backpack');
+    setFormCategory(
+      (activeCategory !== 'Semua' &&
+      editableCategoryNames.includes(activeCategory)
+        ? activeCategory
+        : editableCategoryNames[0]) || 'Backpack'
+    );
     setFormNormalPrice(249000);
     setFormSalePrice(145000);
     setFormWholesaleMinQty(6);
@@ -687,7 +827,11 @@ export default function App() {
     setIsProductModalOpen(true);
   };
 
-  const openAppearanceModal = (tab: AppearanceTab = 'hero') => {
+  const openAppearanceModal = (
+    tab: AppearanceTab = 'hero',
+    articleToEdit: BlogArticle | null = null
+  ) => {
+    setAdminEditingArticle(articleToEdit);
     setAppearanceInitialTab(tab);
     setIsAppearanceModalOpen(true);
   };
@@ -916,12 +1060,14 @@ export default function App() {
     const defaultUi = resetUiContentConfig();
     const defaultStore = resetStoreConfig();
     const defaultReviews = resetLocalReviews();
+    const defaultArticles = resetLocalArticles();
     setProducts(defaults);
     setUiConfig(defaultUi);
     setStoreConfig(defaultStore);
     setReviews(defaultReviews);
+    setArticles(defaultArticles);
     setConfirmResetInline(false);
-    showToast('Katalog, tampilan, ulasan & kontak dikembalikan ke pengaturan default.');
+    showToast('Katalog, tampilan, artikel, ulasan & kontak dikembalikan ke pengaturan default.');
   };
 
   const handleSaveAppearanceAndContact = (
@@ -934,9 +1080,14 @@ export default function App() {
     saveStoreConfig(newStoreConfig);
 
     if (newStoreConfig.supabaseUrl && newStoreConfig.supabaseAnonKey) {
-      syncProductsToSupabase(newStoreConfig, products, newUiConfig).catch(
-        () => {}
-      );
+      syncProductsToSupabase(
+        newStoreConfig,
+        products,
+        newUiConfig,
+        orders,
+        reviews,
+        articles
+      ).catch(() => {});
     }
     showToast('Pengaturan Tampilan, Konten & Kontak Perusahaan berhasil disimpan!');
   };
@@ -944,9 +1095,11 @@ export default function App() {
   const handleResetAppearanceAndContact = () => {
     const defaultUi = resetUiContentConfig();
     const defaultStore = resetStoreConfig();
+    const defaultArticles = resetLocalArticles();
     setUiConfig(defaultUi);
     setStoreConfig(defaultStore);
-    showToast('Tampilan, Banner & Kontak direset ke Default!');
+    setArticles(defaultArticles);
+    showToast('Tampilan, Banner, Artikel & Kontak direset ke Default!');
   };
 
   const handleQuickToggleLivePlatform = (platform: 'tiktok' | 'shopee') => {
@@ -990,7 +1143,8 @@ export default function App() {
       products,
       uiConfig,
       orders,
-      reviews
+      reviews,
+      articles
     );
     setSyncState({ loading: false, ok: res.ok, message: res.message });
     if (res.ok) {
@@ -1030,6 +1184,10 @@ export default function App() {
       if (Array.isArray(res.orders)) {
         setOrders(res.orders);
         saveAllLocalOrders(res.orders);
+      }
+      if (Array.isArray(res.articles) && res.articles.length > 0) {
+        setArticles(res.articles);
+        saveLocalArticles(res.articles);
       }
       showToast('Data berhasil dimuat dari Cloud Supabase!');
     }
@@ -1129,12 +1287,20 @@ export default function App() {
       <Navbar
         storeName={storeConfig.storeName}
         storeConfig={storeConfig}
+        categories={dynamicCategories}
+        productCountsByCategory={productCountsByCategory}
+        totalProductCount={products.length}
+        onOpenManageCategories={() => openAppearanceModal('categories')}
         activeCategory={activeCategory}
         onSelectCategory={(cat) => {
+          setActiveView('catalog');
+          setSelectedBlogArticle(null);
           setActiveCategory(cat);
           setStockFilter('all');
         }}
         onSelectSubCategory={(cat, options) => {
+          setActiveView('catalog');
+          setSelectedBlogArticle(null);
           setActiveCategory(cat);
           setSearchQuery(options?.keyword || '');
           if (options?.stockFilter === 'Ready Stock') {
@@ -1162,11 +1328,17 @@ export default function App() {
           }
         }}
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={(q) => {
+          setSearchQuery(q);
+          if (activeView === 'blog' && q.trim()) {
+            setActiveView('catalog');
+          }
+        }}
         cartCount={totalCartCount}
         wishlistCount={wishlistIds.length}
         isWishlistFilterActive={stockFilter === 'wishlist-only'}
         onToggleWishlistFilter={() => {
+          setActiveView('catalog');
           setStockFilter((prev) =>
             prev === 'wishlist-only' ? 'all' : 'wishlist-only'
           );
@@ -1175,6 +1347,18 @@ export default function App() {
         onOpenOrderTracking={() => setIsOrderTrackingOpen(true)}
         onOpenResellerGuide={() => setIsResellerGuideOpen(true)}
         resellerGuideMenuLabel={uiConfig.resellerGuide?.menuLabel}
+        articles={articles}
+        isBlogViewActive={activeView === 'blog'}
+        onOpenBlogList={() => {
+          setSelectedBlogArticle(null);
+          setActiveView('blog');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onSelectArticle={(article) => {
+          setSelectedBlogArticle(article);
+          setActiveView('blog');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
         announcementText={uiConfig.announcementText}
         showAnnouncementBar={
           uiConfig.catalogLayout?.sectionVisibility?.showAnnouncementBar !==
@@ -1229,6 +1413,24 @@ export default function App() {
 
                 <button
                   type="button"
+                  onClick={() => openAppearanceModal('popup')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 text-xs font-bold border border-amber-400/40 transition-colors cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Edit Pop-Up Promo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openAppearanceModal('categories')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 text-xs font-bold border border-amber-400/40 transition-colors cursor-pointer"
+                >
+                  <Layers className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Manajemen Kategori ({dynamicCategories.length})</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => openAppearanceModal('products')}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 text-xs font-bold border border-amber-400/40 transition-colors cursor-pointer"
                 >
@@ -1243,6 +1445,15 @@ export default function App() {
                 >
                   <BookOpen className="w-3.5 h-3.5 text-amber-400" />
                   <span>Edit Panduan Reseller</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => openAppearanceModal('articles')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 text-xs font-bold border border-amber-400/40 transition-colors cursor-pointer"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Manajemen Artikel ({articles.length})</span>
                 </button>
 
                 <button
@@ -1341,7 +1552,47 @@ export default function App() {
           </section>
         )}
 
-        {/* 2. Hero Banner Slider (Dynamic Slides, Overlay Opacity & Bar Voucher Grosir) */}
+        {activeView === 'blog' ? (
+          <BlogSectionPage
+            articles={articles}
+            selectedArticle={selectedBlogArticle}
+            onSelectArticle={(article) => setSelectedBlogArticle(article)}
+            onBackToCatalog={() => {
+              setSelectedBlogArticle(null);
+              setActiveView('catalog');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            storeConfig={storeConfig}
+            isAdminMode={isAdminMode}
+            onOpenAdminArticleManager={(articleToEdit) =>
+              openAppearanceModal('articles', articleToEdit || null)
+            }
+            onDeleteArticle={(articleId) => {
+              const target = articles.find((a) => a.id === articleId);
+              const next = articles.filter((a) => a.id !== articleId);
+              setArticles(next);
+              saveLocalArticles(next);
+              if (selectedBlogArticle?.id === articleId) {
+                setSelectedBlogArticle(null);
+              }
+              if (storeConfig.supabaseUrl && storeConfig.supabaseAnonKey) {
+                syncProductsToSupabase(
+                  storeConfig,
+                  products,
+                  uiConfig,
+                  orders,
+                  reviews,
+                  next
+                ).catch(() => {});
+              }
+              showToast(
+                `Artikel "${target?.title || ''}" berhasil dihapus & disimpan!`
+              );
+            }}
+          />
+        ) : (
+          <>
+            {/* 2. Hero Banner Slider (Dynamic Slides, Overlay Opacity & Bar Voucher Grosir) */}
         <HeroSlider
           slides={uiConfig.heroSlides}
           vouchers={uiConfig.vouchers}
@@ -1394,20 +1645,33 @@ export default function App() {
         >
           {/* Catalog Header & Sort Controls */}
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-5 border-b border-zinc-200">
-            <div>
+            <div className="space-y-1">
               <p className="text-[11px] font-mono font-bold uppercase tracking-widest text-zinc-400">
                 OFFICIAL CATALOG · TANGAN PERTAMA GUDANG TGI
               </p>
-              <h2 className="font-display text-2xl sm:text-3xl font-bold text-zinc-950 tracking-wider uppercase mt-1">
+              <h2 className="font-display text-2xl sm:text-3xl font-bold text-zinc-950 tracking-wider uppercase">
                 {stockFilter === 'wishlist-only'
                   ? 'WISHLIST FAVORIT SAYA'
                   : activeCategory === 'Semua'
                   ? 'SEMUA KOLEKSI TAS IMPORT'
                   : `KOLEKSI ${activeCategory.toUpperCase()}`}
               </h2>
+              <p className="text-xs text-zinc-600 italic">
+                *Untuk pemesanan partai besar / grosir, silakan langsung chat Admin Sales kami via WhatsApp
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              {/* Button to Re-open Wholesale Promo Banner Pop-Up */}
+              <button
+                type="button"
+                onClick={() => setIsWholesalePromoOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-extrabold uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Info Partai Besar / Grosir</span>
+              </button>
+
               {/* Mobile Filter Drawer Toggle Button */}
               <button
                 type="button"
@@ -1453,8 +1717,6 @@ export default function App() {
                   <option value="featured">Unggulan & Terbaru</option>
                   <option value="price-asc">Harga: Rendah ke Tinggi</option>
                   <option value="price-desc">Harga: Tinggi ke Rendah</option>
-                  <option value="savings-desc">Hemat Grosir Terbesar</option>
-                  <option value="discount-desc">Diskon Terbesar</option>
                   <option value="rating-desc">Rating Tertinggi</option>
                 </select>
               </div>
@@ -1500,59 +1762,59 @@ export default function App() {
 
               {/* 1. Filter Kategori Tas */}
               <div className="space-y-2.5">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-zinc-900">
-                  Kategori Tas
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-zinc-900">
+                    Kategori Tas
+                  </h4>
+                  {isAdminMode && (
+                    <button
+                      type="button"
+                      onClick={() => openAppearanceModal('categories')}
+                      className="text-[10px] font-mono font-bold text-amber-700 hover:text-zinc-950 underline cursor-pointer"
+                    >
+                      + Kelola Kategori
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-1">
-                  {(
-                    [
-                      'Semua',
-                      'Backpack',
-                      'Handbag',
-                      'Shoulder Bag',
-                      'Promo Grosir',
-                    ] as ProductCategory[]
-                  ).map((cat) => {
-                    const active = activeCategory === cat;
-                    const count =
-                      cat === 'Semua'
-                        ? products.length
-                        : cat === 'Promo Grosir'
-                        ? products.filter(
-                            (p) =>
-                              p.category === 'Promo Grosir' || p.isPromoGrosir
-                          ).length
-                        : products.filter((p) => p.category === cat).length;
+                  {(['Semua', ...editableCategoryNames] as ProductCategory[]).map(
+                    (cat) => {
+                      const active = activeCategory === cat;
+                      const count =
+                        cat === 'Semua'
+                          ? products.length
+                          : productCountsByCategory[cat] ?? 0;
 
-                    return (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setActiveCategory(cat)}
-                        className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors cursor-pointer ${
-                          active
-                            ? 'bg-zinc-950 text-white font-bold'
-                            : 'text-zinc-700 hover:bg-zinc-100 font-medium'
-                        }`}
-                      >
-                        <span>{cat}</span>
-                        <span
-                          className={`font-mono text-[11px] tabular-nums ${
-                            active ? 'text-zinc-300' : 'text-zinc-400'
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setActiveCategory(cat)}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-zinc-950 text-white font-bold'
+                              : 'text-zinc-700 hover:bg-zinc-100 font-medium'
                           }`}
                         >
-                          ({count})
-                        </span>
-                      </button>
-                    );
-                  })}
+                          <span>{cat}</span>
+                          <span
+                            className={`font-mono text-[11px] tabular-nums ${
+                              active ? 'text-zinc-300' : 'text-zinc-400'
+                            }`}
+                          >
+                            ({count})
+                          </span>
+                        </button>
+                      );
+                    }
+                  )}
                 </div>
               </div>
 
               {/* 2. Filter Rentang Harga / Budget */}
               <div className="pt-4 border-t border-zinc-100 space-y-2.5">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-zinc-900">
-                  Rentang Harga Ecer
+                  Rentang Harga Produk
                 </h4>
                 <div className="space-y-1.5">
                   {(
@@ -1862,6 +2124,7 @@ export default function App() {
                       key={product.id}
                       product={product}
                       isAdminMode={isAdminMode}
+                      availableCategories={editableCategoryNames}
                       imageAspectRatio={uiConfig.catalogLayout.imageAspectRatio}
                       imageObjectFit={uiConfig.catalogLayout.imageObjectFit}
                       isWishlisted={wishlistIds.includes(product.id)}
@@ -1928,85 +2191,183 @@ export default function App() {
             }}
           />
         )}
+          </>
+        )}
       </main>
 
-      {/* Modern Integrated Storefront Footer (Connected to Company Contact & Social Media Config) */}
+      {/* Corporate Wholesale Standard Footer (Connected to Company Contact & Social Media Config) */}
       <footer className="bg-zinc-950 text-zinc-400 border-t border-zinc-800 mt-8 pb-20 sm:pb-4">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
-          {isAdminMode && (
-            <div className="flex justify-end">
+        {/* Top Corporate Credentials Ribbon */}
+        <div className="border-b border-zinc-900 bg-zinc-900/50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3 text-[11px]">
+            <div className="flex items-center gap-2 text-zinc-300 font-mono uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="font-bold text-white">
+                PUSAT DISTRIBUSI GROSIR & IMPORTIR TANGAN PERTAMA
+              </span>
+              <span className="hidden sm:inline text-zinc-600">|</span>
+              <span className="hidden sm:inline text-amber-400 font-semibold">
+                DIVISI PENJUALAN PARTAI BESAR (B2B) & MITRA RESELLER NASIONAL
+              </span>
+            </div>
+
+            {isAdminMode ? (
               <button
                 type="button"
                 onClick={() => openAppearanceModal('contact')}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-bold transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-bold transition-colors cursor-pointer"
               >
                 <Pencil className="w-3.5 h-3.5" />
-                <span>Edit Kontak, Alamat & Sosial Media Perusahaan</span>
+                <span>Edit Kontak, Alamat & Jam Operasional</span>
               </button>
-            </div>
-          )}
+            ) : (
+              <div className="flex items-center gap-3 text-zinc-400 font-mono">
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                  <span>QC Standar Gudang</span>
+                </span>
+                <span>·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Truck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Pengiriman Kargo Seluruh Indonesia</span>
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-            {/* Column 1: Brand, Slogan, Address, Email & Operating Hours */}
-            <div className="md:col-span-5 space-y-4">
-              <span className="font-display text-2xl font-bold text-white tracking-tight block uppercase">
-                {storeConfig.storeName || 'TAS GROSIR IMPORT'}
-              </span>
-              <p className="text-sm text-zinc-400 leading-relaxed max-w-md">
-                {storeConfig.slogan}
-              </p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Column 1: Formal Corporate Profile, Warehouse Address & Structured Operating Hours */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="space-y-1.5">
+                <span className="inline-block px-2.5 py-0.5 rounded bg-amber-400/15 border border-amber-400/35 font-mono text-[10px] font-bold uppercase tracking-widest text-amber-400">
+                  OFFICIAL CORPORATE HEADQUARTERS & WAREHOUSE
+                </span>
+                <span className="font-display text-2xl sm:text-3xl font-bold text-white tracking-tight block uppercase">
+                  {storeConfig.storeName || 'TAS GROSIR IMPORT'}
+                </span>
+                <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">
+                  {storeConfig.slogan}
+                </p>
+              </div>
 
-              <div className="space-y-2.5 text-xs text-zinc-300 pt-1">
+              {/* Formal Contact & Operating Hours Card Grid */}
+              <div className="rounded-xl bg-zinc-900/80 border border-zinc-800 divide-y divide-zinc-800/90 text-xs text-zinc-300">
+                {/* Warehouse Address */}
                 {storeConfig.warehouseAddress && (
-                  <div className="flex items-start gap-2.5">
-                    <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                    <span>{storeConfig.warehouseAddress}</span>
+                  <div className="p-3.5 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <MapPin className="w-4 h-4" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <span className="block font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                        Kantor Pusat & Gudang Distribusi Utama
+                      </span>
+                      <span className="text-zinc-100 font-medium leading-relaxed block">
+                        {storeConfig.warehouseAddress}
+                      </span>
+                    </div>
                   </div>
                 )}
 
-                {storeConfig.operatingHours && (
-                  <div className="flex items-start gap-2.5">
-                    <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                    <span>{storeConfig.operatingHours}</span>
+                {/* Formal Operating Hours Schedule */}
+                <div className="p-3.5 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Clock className="w-4 h-4" />
                   </div>
-                )}
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                        Jam Operasional Gudang & Layanan B2B
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 font-mono text-[9px] font-bold text-emerald-400 uppercase">
+                        Aktif Setiap Hari Kerja
+                      </span>
+                    </div>
 
-                {storeConfig.email && (
-                  <div className="flex items-center gap-2.5">
-                    <Mail className="w-4 h-4 text-amber-400 shrink-0" />
-                    <a
-                      href={`mailto:${storeConfig.email}`}
-                      className="hover:text-amber-400 transition-colors"
-                    >
-                      {storeConfig.email}
-                    </a>
-                  </div>
-                )}
+                    {storeConfig.operatingHours && (
+                      <p className="text-white font-semibold leading-snug">
+                        {storeConfig.operatingHours}
+                      </p>
+                    )}
 
-                {storeConfig.whatsappNumber && (
-                  <div className="flex items-center gap-2.5">
-                    <PhoneCall className="w-4 h-4 text-amber-400 shrink-0" />
-                    <a
-                      href={floatingWhatsAppUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono font-semibold text-white hover:text-amber-400 transition-colors"
-                    >
-                      +{storeConfig.whatsappNumber.replace(/[^0-9]/g, '')} (WhatsApp Admin)
-                    </a>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px] text-zinc-400">
+                      <div className="px-2.5 py-1.5 rounded bg-zinc-950/80 border border-zinc-800/80">
+                        <span className="block font-mono text-[10px] text-zinc-500">
+                          Senin – Sabtu (Gudang)
+                        </span>
+                        <span className="font-mono font-bold text-zinc-200">
+                          08.00 – 17.00 WIB
+                        </span>
+                      </div>
+                      <div className="px-2.5 py-1.5 rounded bg-zinc-950/80 border border-zinc-800/80">
+                        <span className="block font-mono text-[10px] text-zinc-500">
+                          Batas Pickup / Kargo Harian
+                        </span>
+                        <span className="font-mono font-bold text-amber-400">
+                          Cutoff 15.30 WIB
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                )}
+                </div>
+
+                {/* Official Corporate Hotline & Email */}
+                <div className="p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {storeConfig.whatsappNumber && (
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 text-emerald-400 flex items-center justify-center shrink-0">
+                        <PhoneCall className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                          Hotline Sales Grosir (WA)
+                        </span>
+                        <a
+                          href={floatingWhatsAppUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono font-bold text-white hover:text-amber-400 transition-colors block truncate"
+                        >
+                          +{storeConfig.whatsappNumber.replace(/[^0-9]/g, '')}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {storeConfig.email && (
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 text-amber-400 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block font-mono text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                          Email Korporat & Kemitraan
+                        </span>
+                        <a
+                          href={`mailto:${storeConfig.email}`}
+                          className="font-mono font-semibold text-zinc-200 hover:text-amber-400 transition-colors block truncate"
+                        >
+                          {storeConfig.email}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Column 2: Social Media & Marketplace Links */}
-            <div className="md:col-span-4 space-y-4">
-              <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                Sosial Media & Official Marketplace
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                Ikuti update katalog tas import terbaru dan kunjungi toko resmi kami di sosial media & marketplace:
-              </p>
+            {/* Column 2: Social Media, Official Marketplace & Category Directory */}
+            <div className="lg:col-span-4 space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
+                  Saluran Resmi & Official Marketplace
+                </h3>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Terhubung dengan kanal distribusi resmi TGI untuk pembaruan katalog mingguan dan verifikasi toko:
+                </p>
+              </div>
 
               <div className="flex flex-wrap gap-2">
                 {instagramUrl && (
@@ -2082,63 +2443,79 @@ export default function App() {
                 )}
               </div>
 
-              <div className="pt-2">
-                <h4 className="text-[11px] font-mono uppercase text-zinc-500 mb-2">
-                  Filter Kategori Cepat
+              <div className="p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800/90 space-y-2.5">
+                <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-zinc-300">
+                  Direktori Kategori Katalog & Artikel
                 </h4>
                 <div className="flex flex-wrap gap-2 text-xs">
-                  {(
-                    [
-                      'Semua',
-                      'Backpack',
-                      'Handbag',
-                      'Shoulder Bag',
-                      'Promo Grosir',
-                    ] as ProductCategory[]
-                  ).map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => {
-                        setActiveCategory(cat);
-                        document
-                          .getElementById('katalog-produk')
-                          ?.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className="text-zinc-400 hover:text-amber-400 transition-colors cursor-pointer"
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                  {(['Semua', ...editableCategoryNames] as ProductCategory[]).map(
+                    (cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          setActiveView('catalog');
+                          setSelectedBlogArticle(null);
+                          setActiveCategory(cat);
+                          document
+                            .getElementById('katalog-produk')
+                            ?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="px-2.5 py-1 rounded-md bg-zinc-950 hover:bg-zinc-800 text-zinc-300 hover:text-amber-400 border border-zinc-800 transition-colors cursor-pointer"
+                      >
+                        {cat}
+                      </button>
+                    )
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBlogArticle(null);
+                      setActiveView('blog');
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-2.5 py-1 rounded-md bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 border border-amber-400/30 font-bold transition-colors cursor-pointer"
+                  >
+                    Artikel & Tips Bisnis
+                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Column 3: Direct WhatsApp Order & Cart Action */}
-            <div className="md:col-span-3 space-y-3">
+            {/* Column 3: Direct B2B Wholesale Services & Quick Actions */}
+            <div className="lg:col-span-3 space-y-3">
               <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
-                Layanan Reseller & Grosir WA
+                Divisi Layanan Mitra & Partai Besar
               </h3>
               <p className="text-xs text-zinc-400 leading-relaxed">
-                Hubungi Admin Sales kami via WhatsApp untuk pemesanan partai besar, pengiriman kargo, atau jadwal pickup gudang:
+                Konsultasikan kebutuhan stok toko, negosiasi harga partai karungan, atau jadwal ekspedisi kargo bersama Admin Sales kami:
               </p>
 
               <a
                 href={floatingWhatsAppUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm"
               >
                 <MessageCircle className="w-4 h-4" />
-                <span>Chat WhatsApp Admin</span>
+                <span>Hubungi Admin Sales (WA)</span>
               </a>
 
               <button
                 type="button"
-                onClick={() => setIsCartOpen(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold text-xs inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                onClick={() => setIsWholesalePromoOpen(true)}
+                className="w-full py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-xs inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
-                <ShoppingBag className="w-4 h-4" />
+                <Sparkles className="w-4 h-4" />
+                <span>Info Promo & Syarat Partai Besar</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsCartOpen(true)}
+                className="w-full py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-bold text-xs border border-zinc-800 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <ShoppingBag className="w-4 h-4 text-amber-400" />
                 <span>Buka Keranjang ({totalCartCount} pcs)</span>
               </button>
 
@@ -2148,13 +2525,13 @@ export default function App() {
                 className="w-full py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-400 font-bold text-xs border border-zinc-800 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <Truck className="w-4 h-4" />
-                <span>Cek Resi & Status Pesanan</span>
+                <span>Cek Resi & Status Kargo</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsResellerGuideOpen(true)}
-                className="w-full py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-100 hover:text-amber-400 font-bold text-xs border border-zinc-800 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-200 hover:text-amber-400 font-bold text-xs border border-zinc-800 inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <BookOpen className="w-4 h-4 text-amber-400" />
                 <span>
@@ -2168,12 +2545,12 @@ export default function App() {
 
         <div className="border-t border-zinc-900 py-5 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-500">
           <span>
-            © {new Date().getFullYear()} {storeConfig.storeName}. Hak Cipta Dilindungi.
+            © {new Date().getFullYear()} {storeConfig.storeName}. Seluruh Hak Cipta Dilindungi Undang-Undang.
           </span>
           <div className="inline-flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 text-zinc-400">
               <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>Harga Grosir Tangan Pertama · Garansi Retur 100%</span>
+              <span>Importir Tangan Pertama · Jaminan Produk Original & Retur 100%</span>
             </span>
             <button
               type="button"
@@ -2436,7 +2813,18 @@ export default function App() {
         onEditProduct={openEditProductModal}
       />
 
-      {/* Master Panel Admin Terpadu (7 Tabs) */}
+      {/* Pop-Up Banner Promo Grosir Otomatis Saat Kunjungan / Refresh Web */}
+      <WholesalePromoPopupModal
+        isOpen={isWholesalePromoOpen}
+        onClose={() => setIsWholesalePromoOpen(false)}
+        storeConfig={storeConfig}
+        popupConfig={uiConfig.wholesalePopup}
+        isAdminMode={isAdminMode}
+        onOpenAdminEditor={() => openAppearanceModal('popup')}
+        onOpenResellerGuide={() => setIsResellerGuideOpen(true)}
+      />
+
+      {/* Master Panel Admin Terpadu (including Pop-Up Promo & Manajemen Artikel) */}
       <AdminAppearanceModal
         isOpen={isAppearanceModalOpen}
         initialTab={appearanceInitialTab}
@@ -2462,14 +2850,41 @@ export default function App() {
               nextProducts,
               uiConfig,
               orders,
-              reviews
+              reviews,
+              articles
             ).catch(() => {});
           }
         }}
         onOpenAddProductModal={openAddProductModal}
         onOpenEditProductModal={openEditProductModal}
         onDeleteProduct={handleDeleteProduct}
-        onClose={() => setIsAppearanceModalOpen(false)}
+        articles={articles}
+        initialEditArticle={adminEditingArticle}
+        onPreviewWholesalePopup={() => setIsWholesalePromoOpen(true)}
+        onUpdateArticles={(nextArticles) => {
+          setArticles(nextArticles);
+          saveLocalArticles(nextArticles);
+          if (selectedBlogArticle) {
+            const updatedCurrent = nextArticles.find(
+              (a) => a.id === selectedBlogArticle.id
+            );
+            setSelectedBlogArticle(updatedCurrent || null);
+          }
+          if (storeConfig.supabaseUrl && storeConfig.supabaseAnonKey) {
+            syncProductsToSupabase(
+              storeConfig,
+              products,
+              uiConfig,
+              orders,
+              reviews,
+              nextArticles
+            ).catch(() => {});
+          }
+        }}
+        onClose={() => {
+          setIsAppearanceModalOpen(false);
+          setAdminEditingArticle(null);
+        }}
         onSaveAll={handleSaveAppearanceAndContact}
         onLiveChange={(nextUi, nextStore) => {
           setUiConfig(nextUi);
@@ -2482,7 +2897,8 @@ export default function App() {
               products,
               nextUi,
               orders,
-              reviews
+              reviews,
+              articles
             ).catch(() => {});
           }
         }}
@@ -2550,23 +2966,35 @@ export default function App() {
                     </div>
 
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        Kategori *
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-zinc-700">
+                          Kategori *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsProductModalOpen(false);
+                            openAppearanceModal('categories');
+                          }}
+                          className="text-[10px] font-mono font-bold text-amber-700 hover:text-zinc-950 underline cursor-pointer"
+                        >
+                          + Kelola / Tambah Kategori Baru
+                        </button>
+                      </div>
                       <select
                         value={formCategory}
-                        onChange={(e) =>
-                          setFormCategory(
-                            e.target.value as Exclude<ProductCategory, 'Semua'>
-                          )
-                        }
+                        onChange={(e) => setFormCategory(e.target.value)}
                         className="w-full px-3 py-2 text-sm font-semibold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
                       >
-                        {EDITABLE_CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
+                        {Array.from(
+                          new Set([...editableCategoryNames, formCategory])
+                        )
+                          .filter(Boolean)
+                          .map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
                       </select>
                     </div>
                   </div>
@@ -3338,27 +3766,95 @@ export default function App() {
         </div>
       )}
 
-      {/* Interactive Toast Notification with Optional Quick Cart Action */}
+      {/* Elegant Floating Toast Notification with Product Preview & Progress Bar */}
       {toastMessage && (
-        <div className="fixed bottom-16 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 w-[calc(100vw-2rem)] sm:w-auto max-w-md bg-zinc-950 text-white px-4 py-3 rounded-2xl shadow-2xl border border-amber-400/50 flex items-center justify-between gap-3 text-xs sm:text-sm font-medium">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="w-5 h-5 rounded-full bg-amber-400 text-zinc-950 font-extrabold flex items-center justify-center shrink-0 text-xs">
-              ✓
-            </span>
-            <span className="truncate sm:whitespace-normal">{toastMessage}</span>
+        <div
+          key={toastKey}
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-16 sm:bottom-6 right-4 sm:right-6 left-4 sm:left-auto z-50 sm:w-[410px] max-w-full bg-zinc-950/95 backdrop-blur-md text-white rounded-2xl shadow-2xl shadow-zinc-950/50 border border-zinc-800/90 overflow-hidden animate-toast-in"
+        >
+          <div className="p-3.5 sm:p-4 flex items-center justify-between gap-3">
+            {toastCartMeta ? (
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="relative w-12 h-12 rounded-xl bg-white p-1 shrink-0 border border-zinc-700/60 overflow-hidden shadow-xs">
+                  <img
+                    src={toastCartMeta.imageUrl}
+                    alt={toastCartMeta.productName}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-contain"
+                  />
+                  <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-extrabold shadow-xs">
+                    ✓
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[9px] font-bold uppercase tracking-wider">
+                      + Masuk Keranjang
+                    </span>
+                    <span className="font-mono text-[10px] text-amber-400 font-bold truncate">
+                      {toastCartMeta.sku}
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-[13px] font-bold text-white truncate">
+                    {toastCartMeta.productName}
+                  </p>
+                  <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                    {toastCartMeta.colorLabel} · {toastCartMeta.quantity} pcs (
+                    <span className="font-mono text-zinc-200 font-semibold">
+                      {formatRupiah(
+                        toastCartMeta.unitPrice * toastCartMeta.quantity
+                      )}
+                    </span>
+                    )
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <span className="w-7 h-7 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-extrabold flex items-center justify-center shrink-0 text-xs">
+                  ✓
+                </span>
+                <span className="text-xs sm:text-sm font-medium text-zinc-100 leading-snug">
+                  {toastMessage}
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {toastShowCartBtn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToastMessage(null);
+                    setToastCartMeta(null);
+                    setIsCartOpen(true);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-95 text-zinc-950 font-extrabold text-[11px] inline-flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5 stroke-[2.3]" />
+                  <span>Keranjang ({totalCartCount})</span>
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Tutup notifikasi"
+                onClick={() => {
+                  setToastMessage(null);
+                  setToastCartMeta(null);
+                }}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 active:scale-90 transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          {toastShowCartBtn && (
-            <button
-              type="button"
-              onClick={() => {
-                setToastMessage(null);
-                setIsCartOpen(true);
-              }}
-              className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 font-extrabold text-xs shrink-0 transition-colors cursor-pointer"
-            >
-              Buka Keranjang
-            </button>
-          )}
+
+          {/* Animated Auto-Dismiss Progress Bar */}
+          <div className="h-1 w-full bg-zinc-800/80 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-amber-300 animate-toast-progress" />
+          </div>
         </div>
       )}
     </div>

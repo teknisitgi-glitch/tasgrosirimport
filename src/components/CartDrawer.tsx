@@ -20,6 +20,7 @@ import {
   formatRupiah,
   getEffectiveUnitPrice,
   buildWhatsAppOrderText,
+  buildDirectWhatsAppUrl,
   calculateCargoEstimates,
   CargoCourierEstimate,
   getColorSwatchHex,
@@ -177,19 +178,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     storeConfig.freeShippingThreshold - orderData.totalPayable
   );
 
-  // MOQ (Minimum Order Quantity) Progress Calculation
-  const remainingMoqPcs = Math.max(0, GLOBAL_MOQ_PCS - orderData.totalQuantity);
-  const moqProgressPercent = Math.min(
-    100,
-    Math.round((orderData.totalQuantity / GLOBAL_MOQ_PCS) * 100)
-  );
-  const potentialWholesaleExtraSavings = items.reduce(
-    (acc, item) =>
-      acc +
-      Math.max(0, item.product.salePrice - item.product.wholesalePrice) *
-        item.quantity,
-    0
-  );
+  const directSalesWaUrl = buildDirectWhatsAppUrl(storeConfig);
 
   const handleCopyMessage = async () => {
     try {
@@ -329,96 +318,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           </button>
         </div>
 
-        {/* Fitur MOQ Progress Bar (Minimal Pembelian 6 Pcs untuk Harga Grosir Otomatis) */}
-        <div
-          className={`px-5 sm:px-6 py-3.5 border-b transition-colors space-y-2.5 ${
-            orderData.isWholesaleOrder
-              ? 'bg-emerald-50/90 border-emerald-200'
-              : 'bg-zinc-100 border-zinc-200'
-          }`}
-        >
-          {/* MOQ Wholesale Progress Header & Dynamic Message */}
-          <div className="flex items-start justify-between gap-2.5 text-xs">
-            <div className="min-w-0 space-y-0.5">
-              {remainingMoqPcs > 0 && !orderData.isWholesaleOrder ? (
-                <>
-                  <p className="font-bold text-zinc-900 leading-snug">
-                    Kurang{' '}
-                    <strong className="font-mono text-amber-950 bg-amber-300/90 px-1.5 py-0.5 rounded font-black tabular-nums">
-                      {remainingMoqPcs} pcs
-                    </strong>{' '}
-                    lagi untuk mengaktifkan Harga Grosir Pabrik!
-                  </p>
-                  <p className="text-[11px] text-zinc-500">
-                    Bebas campur model (SKU) & varian warna minimal {GLOBAL_MOQ_PCS} pcs.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-extrabold text-emerald-800 text-xs sm:text-sm leading-snug flex items-center gap-1.5">
-                    <span>Harga Grosir Aktif! 🚀</span>
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono text-[10px] font-bold uppercase">
-                      Hemat Pabrik
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-emerald-700 font-medium">
-                    Syarat minimal {GLOBAL_MOQ_PCS} pcs terpenuhi — seluruh item mendapat tarif grosir pabrik otomatis.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <span
-              className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-extrabold shrink-0 tabular-nums shadow-2xs ${
-                orderData.isWholesaleOrder
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-zinc-950 text-amber-400'
-              }`}
+        {/* Wholesale / Partai Besar Inquiry Banner */}
+        <div className="px-5 sm:px-6 py-3 bg-zinc-100 border-b border-zinc-200 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] text-zinc-700 leading-relaxed italic">
+              *Untuk pemesanan partai besar / grosir, silakan langsung chat Admin Sales kami via WhatsApp
+            </p>
+            <a
+              href={directSalesWaUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-extrabold shrink-0 transition-colors cursor-pointer shadow-2xs"
             >
-              {orderData.totalQuantity}/{GLOBAL_MOQ_PCS} PCS MOQ
-            </span>
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>Chat Admin Sales</span>
+            </a>
           </div>
 
-          {/* Visual MOQ Progress Bar with 6 Milestone Segments */}
-          <div className="space-y-1.5">
-            <div className="relative w-full h-2.5 rounded-full bg-zinc-200/90 overflow-hidden border border-zinc-300/80">
-              <div
-                className={`h-full transition-all duration-300 rounded-full ${
-                  orderData.isWholesaleOrder
-                    ? 'bg-emerald-600'
-                    : 'bg-amber-400'
-                }`}
-                style={{ width: `${moqProgressPercent}%` }}
-              />
-            </div>
-
-            {/* 6-Step Visual Indicators */}
-            <div className="grid grid-cols-6 gap-1">
-              {Array.from({ length: GLOBAL_MOQ_PCS }).map((_, idx) => {
-                const stepNum = idx + 1;
-                const reached =
-                  orderData.totalQuantity >= stepNum || orderData.isWholesaleOrder;
-                return (
-                  <div
-                    key={stepNum}
-                    className={`text-center py-0.5 rounded text-[9px] font-mono font-bold transition-colors ${
-                      reached
-                        ? orderData.isWholesaleOrder
-                          ? 'bg-emerald-600/15 text-emerald-800 border border-emerald-500/30'
-                          : 'bg-amber-400/25 text-zinc-900 border border-amber-400/50'
-                        : 'bg-white/70 text-zinc-400 border border-zinc-200'
-                    }`}
-                  >
-                    {stepNum === GLOBAL_MOQ_PCS ? '6+ GROSIR' : `${stepNum} pcs`}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Secondary Info: Free Shipping / Extra Savings Hint */}
           {items.length > 0 && (
-            <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 pt-0.5">
+            <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-600 pt-1 border-t border-zinc-200/80">
               <span className="inline-flex items-center gap-1.5 truncate">
                 <Truck className="w-3.5 h-3.5 text-zinc-800 shrink-0" />
                 {remainingForFreeShipping === 0 ? (
@@ -435,14 +353,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </span>
                 )}
               </span>
-
-              {remainingMoqPcs > 0 &&
-                !orderData.isWholesaleOrder &&
-                potentialWholesaleExtraSavings > 0 && (
-                  <span className="font-mono font-bold text-emerald-700 shrink-0">
-                    Potensi hemat +{formatRupiah(potentialWholesaleExtraSavings)}
-                  </span>
-                )}
+              <span className="font-mono text-[10px] font-bold text-zinc-500 shrink-0">
+                Total: {orderData.totalQuantity} pcs
+              </span>
             </div>
           )}
         </div>
@@ -488,7 +401,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
 
                 {items.map((item) => {
-                  const { unitPrice, isWholesaleApplied } = getEffectiveUnitPrice(
+                  const { unitPrice } = getEffectiveUnitPrice(
                     item,
                     orderData.totalQuantity
                   );
@@ -563,17 +476,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               {formatRupiah(unitPrice * item.quantity)}
                             </span>
                             <span className="block text-[11px] text-zinc-500 font-mono tabular-nums">
-                              {formatRupiah(unitPrice)} / pcs
-                              {isWholesaleApplied ? (
-                                <strong className="text-emerald-700 ml-1">
-                                  (Harga Grosir)
-                                </strong>
-                              ) : (
-                                <span className="text-zinc-400 ml-1">
-                                  (Ecer)
-                                </span>
-                              )}
-                              {' · '}
+                              {formatRupiah(unitPrice)} / pcs ·{' '}
                               <span className="text-zinc-500">
                                 {(itemWeightGrams / 1000).toFixed(2)} kg
                               </span>
@@ -1140,33 +1043,32 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         {/* Bottom Checkout Summary & WhatsApp CTA */}
         {items.length > 0 && (
           <div className="p-4 sm:p-6 bg-white border-t border-zinc-200 space-y-3">
-            {/* Compact Dynamic MOQ Banner Above Total Purchase */}
-            {remainingMoqPcs > 0 && !orderData.isWholesaleOrder && (
-              <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-300 flex items-center justify-between gap-2 text-xs">
-                <span className="font-semibold text-amber-950">
-                  Tambah{' '}
-                  <strong className="font-mono font-extrabold underline">
-                    {remainingMoqPcs} pcs lagi
-                  </strong>{' '}
-                  untuk menikmati harga grosir spesial!
-                </span>
-                <span className="font-mono text-[11px] font-extrabold text-amber-800 shrink-0">
-                  {moqProgressPercent}% MOQ
-                </span>
-              </div>
-            )}
+            {/* Note for Partai Besar / Grosir */}
+            <div className="px-3 py-2 rounded-xl bg-amber-50/90 border border-amber-200 flex items-center justify-between gap-2 text-[11px]">
+              <span className="text-amber-950 italic">
+                *Untuk pemesanan partai besar / grosir, silakan langsung chat Admin Sales kami via WhatsApp
+              </span>
+              <a
+                href={directSalesWaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold text-emerald-700 hover:underline shrink-0"
+              >
+                Chat Admin →
+              </a>
+            </div>
 
             <div className="space-y-1 text-sm">
-              <div className="flex justify-between text-xs text-zinc-500">
+              <div className="flex justify-between text-xs text-zinc-600">
                 <span className="inline-flex items-center gap-1">
                   <Scale className="w-3.5 h-3.5 text-zinc-400" />
                   <span>
-                    Total Harga Normal ({orderData.totalQuantity} pcs · ~
+                    Subtotal Produk ({orderData.totalQuantity} pcs · ~
                     {orderData.totalWeightKg} kg)
                   </span>
                 </span>
-                <span className="font-mono line-through tabular-nums">
-                  {formatRupiah(orderData.subtotalNormal)}
+                <span className="font-mono font-semibold text-zinc-900 tabular-nums">
+                  {formatRupiah(orderData.subtotalItems)}
                 </span>
               </div>
               {deliveryMethod === 'ekspedisi' && selectedCourier && (
@@ -1187,12 +1089,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </span>
                 </div>
               )}
-              <div className="flex justify-between text-xs text-emerald-700 font-semibold">
-                <span>Total Hemat Diskon & Grosir</span>
-                <span className="font-mono tabular-nums">
-                  -{formatRupiah(orderData.totalSavings)}
-                </span>
-              </div>
               <div className="flex justify-between items-baseline pt-2 border-t border-zinc-100">
                 <span className="font-bold text-zinc-900">
                   Total Estimasi Bayar Produk

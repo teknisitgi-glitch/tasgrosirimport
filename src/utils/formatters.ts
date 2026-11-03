@@ -14,21 +14,12 @@ export function calculateDiscountPercent(normalPrice: number, salePrice: number)
   return Math.round(((normalPrice - salePrice) / normalPrice) * 100);
 }
 
-export function getEffectiveUnitPrice(item: CartItem, totalCartQuantity: number): {
+export function getEffectiveUnitPrice(item: CartItem, _totalCartQuantity: number): {
   unitPrice: number;
   isWholesaleApplied: boolean;
 } {
-  const { product, quantity } = item;
-  const qualifiesForWholesale =
-    quantity >= product.wholesaleMinQty || totalCartQuantity >= 6;
-  if (qualifiesForWholesale && product.wholesalePrice < product.salePrice) {
-    return {
-      unitPrice: product.wholesalePrice,
-      isWholesaleApplied: true,
-    };
-  }
   return {
-    unitPrice: product.salePrice,
+    unitPrice: item.product.salePrice,
     isWholesaleApplied: false,
   };
 }
@@ -408,26 +399,20 @@ export function buildWhatsAppOrderText(params: {
 
   let subtotalNormal = 0;
   let subtotalItems = 0;
-  let anyWholesale = false;
 
   const itemLines = items.map((item, idx) => {
-    const { unitPrice, isWholesaleApplied } = getEffectiveUnitPrice(
-      item,
-      totalQuantity
-    );
-    if (isWholesaleApplied) anyWholesale = true;
+    const { unitPrice } = getEffectiveUnitPrice(item, totalQuantity);
     const lineTotal = unitPrice * item.quantity;
-    subtotalNormal += item.product.normalPrice * item.quantity;
+    subtotalNormal += unitPrice * item.quantity;
     subtotalItems += lineTotal;
 
-    const tierLabel = isWholesaleApplied ? ' [Harga Grosir]' : ' [Harga Ecer Promo]';
     const sizeText = item.selectedSize || 'Medium (Standar)';
     return [
       `${idx + 1}. *${item.product.name}*`,
       `   • Kode SKU: \`${item.product.sku}\``,
       `   • Pilihan Warna: *${item.selectedColor}*`,
       `   • Pilihan Ukuran: *${sizeText}*`,
-      `   • Jumlah: *${item.quantity} pcs* × ${formatRupiah(unitPrice)}${tierLabel}`,
+      `   • Jumlah: *${item.quantity} pcs* × ${formatRupiah(unitPrice)}`,
       `   • Subtotal Item: *${formatRupiah(lineTotal)}*`,
     ].join('\n');
   });
@@ -439,7 +424,7 @@ export function buildWhatsAppOrderText(params: {
   );
   const voucherDiscount = voucherEval.valid ? voucherEval.discountAmount : 0;
   const totalPayable = Math.max(0, subtotalItems - voucherDiscount);
-  const totalSavings = Math.max(0, subtotalNormal - totalPayable);
+  const totalSavings = Math.max(0, subtotalItems - totalPayable);
   const cleanPhone = cleanWhatsAppNumber(config.whatsappNumber);
 
   const customGreeting = (
@@ -451,7 +436,6 @@ export function buildWhatsAppOrderText(params: {
   const lines = [
     customGreeting,
     `No. Referensi Order: *#${orderReference}*`,
-    `Status Harga: *${anyWholesale ? 'HARGA GROSIR AKTIF (≥6 Pcs)' : 'HARGA PROMO ECER'}*`,
     `========================================`,
     ...itemLines,
     `========================================`,
@@ -463,7 +447,6 @@ export function buildWhatsAppOrderText(params: {
     deliveryMethod === 'ekspedisi' && selectedCargoName
       ? `• Estimasi Ongkir Kargo (${selectedCargoName} · ~${estimatedSackCount} Karung): *~${formatRupiah(selectedCargoCost)}*`
       : '',
-    `• Total Hemat Diskon & Grosir: *${formatRupiah(totalSavings)}*`,
     `• *TOTAL ESTIMASI BAYAR PRODUK: ${formatRupiah(totalPayable)}*`,
     deliveryMethod === 'ekspedisi' && selectedCargoCost > 0
       ? `• *ESTIMASI TOTAL + ONGKIR KARGO: ${formatRupiah(totalPayable + selectedCargoCost)}*`
@@ -481,6 +464,7 @@ export function buildWhatsAppOrderText(params: {
     }`,
     notes.trim() ? `• Catatan Tambahan: ${notes.trim()}` : '',
     ``,
+    `_Catatan: Untuk pemesanan partai besar / grosir, mohon info harga khusus partai dari Admin Sales._`,
     `Mohon info ketersediaan stok, rincian ongkir final, dan rekening pembayaran. Terima kasih!`,
   ].filter(Boolean);
 
@@ -500,7 +484,7 @@ export function buildWhatsAppOrderText(params: {
     voucherLabel: voucherEval.label,
     totalPayable,
     totalSavings,
-    isWholesaleOrder: anyWholesale,
+    isWholesaleOrder: false,
   };
 }
 

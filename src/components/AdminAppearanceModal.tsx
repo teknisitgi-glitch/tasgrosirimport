@@ -37,10 +37,13 @@ import {
   ProductImageAspectRatio,
   ProductImageObjectFit,
   ProductCategory,
+  CategoryItem,
   LiveShoppingConfig,
   ResellerGuideConfig,
   ResellerGuideCargoRow,
   SectionVisibilityConfig,
+  BlogArticle,
+  WholesalePopupConfig,
 } from '../types/product';
 import {
   createHeroLookbookSvg,
@@ -52,14 +55,19 @@ import {
   saveUiContentConfig,
   saveStoreConfig,
   DEFAULT_RESELLER_GUIDE_CONFIG,
+  DEFAULT_WHOLESALE_POPUP_CONFIG,
+  DEFAULT_CATEGORIES,
 } from '../services/productService';
 import { compressImageFileToDataUrl, formatRupiah } from '../utils/formatters';
 
 export type AppearanceTab =
   | 'hero'
+  | 'popup'
   | 'bento'
   | 'products'
+  | 'categories'
   | 'reseller-guide'
+  | 'articles'
   | 'layout'
   | 'live'
   | 'contact';
@@ -74,6 +82,10 @@ interface AdminAppearanceModalProps {
   onOpenAddProductModal?: () => void;
   onOpenEditProductModal?: (product: Product) => void;
   onDeleteProduct?: (productId: string) => void;
+  articles?: BlogArticle[];
+  onUpdateArticles?: (nextArticles: BlogArticle[]) => void;
+  initialEditArticle?: BlogArticle | null;
+  onPreviewWholesalePopup?: () => void;
   onClose: () => void;
   onSaveAll: (newUiConfig: UiContentConfig, newStoreConfig: StoreConfig) => void;
   onLiveChange?: (newUiConfig: UiContentConfig, newStoreConfig: StoreConfig) => void;
@@ -114,6 +126,10 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
   onOpenAddProductModal,
   onOpenEditProductModal,
   onDeleteProduct,
+  articles = [],
+  onUpdateArticles,
+  initialEditArticle = null,
+  onPreviewWholesalePopup,
   onClose,
   onSaveAll,
   onLiveChange,
@@ -128,6 +144,91 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
   const [confirmDeleteProdId, setConfirmDeleteProdId] = useState<string | null>(
     null
   );
+
+  // State for Manajemen Artikel
+  const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
+  const [artTitle, setArtTitle] = useState<string>('');
+  const [artCategory, setArtCategory] = useState<string>('Strategi Bisnis');
+  const [artPublishedAt, setArtPublishedAt] = useState<string>(() =>
+    new Date().toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    })
+  );
+  const [artReadTime, setArtReadTime] = useState<string>('4 Menit Baca');
+  const [artAuthor, setArtAuthor] = useState<string>('Tim Edukasi Bisnis TGI');
+  const [artExcerpt, setArtExcerpt] = useState<string>('');
+  const [artContent, setArtContent] = useState<string>('');
+  const [artImageUrl, setArtImageUrl] = useState<string>(() =>
+    createHeroLookbookSvg(0)
+  );
+  const [confirmDeleteArticleId, setConfirmDeleteArticleId] = useState<
+    string | null
+  >(null);
+  const [articleStatusMsg, setArticleStatusMsg] = useState<string | null>(null);
+
+  // State for Manajemen Kategori
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatOriginalName, setEditingCatOriginalName] =
+    useState<string>('');
+  const [catName, setCatName] = useState<string>('');
+  const [catDescription, setCatDescription] = useState<string>('');
+  const [catBadge, setCatBadge] = useState<string>('');
+  const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(
+    null
+  );
+  const [categoryStatusMsg, setCategoryStatusMsg] = useState<string | null>(
+    null
+  );
+
+  const resetCategoryForm = () => {
+    setEditingCatId(null);
+    setEditingCatOriginalName('');
+    setCatName('');
+    setCatDescription('');
+    setCatBadge('');
+  };
+
+  const loadCategoryIntoForm = (cat: CategoryItem) => {
+    setEditingCatId(cat.id);
+    setEditingCatOriginalName(cat.name);
+    setCatName(cat.name);
+    setCatDescription(cat.description || '');
+    setCatBadge(cat.badge || '');
+    setCategoryStatusMsg(null);
+  };
+
+  const resetArticleForm = () => {
+    setEditingArticleId(null);
+    setArtTitle('');
+    setArtCategory('Strategi Bisnis');
+    setArtPublishedAt(
+      new Date().toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      })
+    );
+    setArtReadTime('4 Menit Baca');
+    setArtAuthor('Tim Edukasi Bisnis TGI');
+    setArtExcerpt('');
+    setArtContent('');
+    setArtImageUrl(createHeroLookbookSvg(0));
+  };
+
+  const loadArticleIntoForm = (article: BlogArticle) => {
+    setEditingArticleId(article.id);
+    setArtTitle(article.title);
+    setArtCategory(article.category || 'Strategi Bisnis');
+    setArtPublishedAt(article.publishedAt || '12 Mei 2025');
+    setArtReadTime(article.readTime || '4 Menit Baca');
+    setArtAuthor(article.author || 'Tim Edukasi Bisnis TGI');
+    setArtExcerpt(article.excerpt || '');
+    setArtContent(article.content || '');
+    setArtImageUrl(article.imageUrl || createHeroLookbookSvg(0));
+    setArticleStatusMsg(null);
+  };
 
   const wasOpenRef = useRef<boolean>(false);
   const initialUiSnapshotRef = useRef<UiContentConfig>(uiConfig);
@@ -147,12 +248,32 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
       setActiveTab(initialTab);
       setSelectedSlideIdx(0);
       setConfirmReset(false);
+      setArticleStatusMsg(null);
+      setCategoryStatusMsg(null);
+      resetCategoryForm();
+      if (initialEditArticle) {
+        loadArticleIntoForm(initialEditArticle);
+      } else {
+        resetArticleForm();
+      }
     } else if (!isOpen && wasOpenRef.current) {
       wasOpenRef.current = false;
     }
-  }, [isOpen, initialTab, uiConfig, storeConfig]);
+  }, [isOpen, initialTab, uiConfig, storeConfig, initialEditArticle]);
 
   if (!isOpen) return null;
+
+  const draftCategories: CategoryItem[] =
+    Array.isArray(draft.categories) && draft.categories.length > 0
+      ? draft.categories
+      : DEFAULT_CATEGORIES;
+  const dynamicEditableCategoryNames: string[] = draftCategories.map(
+    (c) => c.name
+  );
+  const dynamicTargetCategoryNames: string[] = [
+    'Semua',
+    ...dynamicEditableCategoryNames,
+  ];
 
   const applyDraftUpdate = (
     updater: (prev: UiContentConfig) => UiContentConfig
@@ -216,6 +337,50 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
         ...patch,
       },
     }));
+  };
+
+  // Wholesale Promo Popup Helper
+  const wholesalePopup: WholesalePopupConfig = {
+    ...DEFAULT_WHOLESALE_POPUP_CONFIG,
+    ...(draft.wholesalePopup || {}),
+    termsPoints:
+      Array.isArray(draft.wholesalePopup?.termsPoints) &&
+      draft.wholesalePopup.termsPoints.length > 0
+        ? draft.wholesalePopup.termsPoints
+        : DEFAULT_WHOLESALE_POPUP_CONFIG.termsPoints,
+  };
+
+  const updateWholesalePopup = (patch: Partial<WholesalePopupConfig>) => {
+    applyDraftUpdate((prev) => ({
+      ...prev,
+      wholesalePopup: {
+        ...DEFAULT_WHOLESALE_POPUP_CONFIG,
+        ...(prev.wholesalePopup || {}),
+        ...patch,
+      },
+    }));
+  };
+
+  const updateWholesalePopupPoint = (index: number, value: string) => {
+    const nextPoints = [...wholesalePopup.termsPoints];
+    nextPoints[index] = value;
+    updateWholesalePopup({ termsPoints: nextPoints });
+  };
+
+  const handleAddWholesalePopupPoint = () => {
+    updateWholesalePopup({
+      termsPoints: [
+        ...wholesalePopup.termsPoints,
+        'Poin syarat & ketentuan grosir baru...',
+      ],
+    });
+  };
+
+  const handleRemoveWholesalePopupPoint = (index: number) => {
+    if (wholesalePopup.termsPoints.length <= 1) return;
+    updateWholesalePopup({
+      termsPoints: wholesalePopup.termsPoints.filter((_, idx) => idx !== index),
+    });
   };
 
   const updateMoqPoint = (
@@ -557,6 +722,28 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
 
           <button
             type="button"
+            onClick={() => setActiveTab('popup')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              activeTab === 'popup'
+                ? 'bg-white text-zinc-950 border-amber-400 shadow-2xs'
+                : 'text-zinc-600 border-transparent hover:text-zinc-950'
+            }`}
+          >
+            <Megaphone className="w-3.5 h-3.5 text-amber-500" />
+            <span>Pop-Up Promo Grosir</span>
+            <span
+              className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-extrabold ${
+                wholesalePopup.enabled
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-zinc-200 text-zinc-600'
+              }`}
+            >
+              {wholesalePopup.enabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('bento')}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'bento'
@@ -583,6 +770,19 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
 
           <button
             type="button"
+            onClick={() => setActiveTab('categories')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              activeTab === 'categories'
+                ? 'bg-white text-zinc-950 border-amber-400 shadow-2xs'
+                : 'text-zinc-600 border-transparent hover:text-zinc-950'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-amber-500" />
+            <span>Manajemen Kategori ({draftCategories.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('reseller-guide')}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'reseller-guide'
@@ -596,6 +796,19 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
 
           <button
             type="button"
+            onClick={() => setActiveTab('articles')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              activeTab === 'articles'
+                ? 'bg-white text-zinc-950 border-amber-400 shadow-2xs'
+                : 'text-zinc-600 border-transparent hover:text-zinc-950'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5 text-amber-500" />
+            <span>Manajemen Artikel ({articles.length})</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('layout')}
             className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-t-xl text-xs font-bold border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               activeTab === 'layout'
@@ -604,7 +817,7 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5 text-amber-500" />
-            <span>5. Layout & Visibilitas Section</span>
+            <span>Layout & Visibilitas</span>
           </button>
 
           <button
@@ -624,7 +837,7 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
                   : 'text-amber-500'
               }`}
             />
-            <span>6. Live Studio</span>
+            <span>Live Studio</span>
             {(draft.liveShopping?.isTikTokLive ||
               draft.liveShopping?.isShopeeLive) && (
               <span className="px-1.5 py-0.5 rounded bg-red-600 text-white font-mono text-[10px] font-extrabold">
@@ -643,7 +856,7 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
             }`}
           >
             <PhoneCall className="w-3.5 h-3.5 text-amber-500" />
-            <span>7. Kontak & Keamanan PIN</span>
+            <span>Kontak & PIN</span>
           </button>
         </div>
 
@@ -827,7 +1040,7 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
                         }
                         className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
                       >
-                        {TARGET_CATEGORIES.map((cat) => (
+                        {dynamicTargetCategoryNames.map((cat) => (
                           <option key={cat} value={cat}>
                             {cat}
                           </option>
@@ -1112,6 +1325,374 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Quick Link Card to Pop-Up Banner Promo Grosir Editor */}
+              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-300 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-zinc-950 text-amber-400 flex items-center justify-center shrink-0">
+                    <Megaphone className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-extrabold text-zinc-950">
+                      Ingin Mengubah Teks Pop-Up Banner Promo Grosir?
+                    </h4>
+                    <p className="text-xs text-zinc-600">
+                      Atur Judul Pop-Up, Deskripsi Penawaran, Poin Syarat Singkat, dan Teks Tombol WhatsApp secara real-time.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('popup')}
+                  className="px-4 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-amber-400 font-bold text-xs cursor-pointer transition-colors shrink-0"
+                >
+                  Edit Teks Pop-Up Promo →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB POP-UP: EDIT TEKS POP-UP BANNER PROMO GROSIR */}
+          {activeTab === 'popup' && (
+            <div className="space-y-6">
+              {/* Top Header & Toggle Controls */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-zinc-950 text-white border border-zinc-800 flex flex-wrap items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 text-amber-400 font-mono text-[11px] font-extrabold uppercase tracking-wider">
+                    <Megaphone className="w-3.5 h-3.5" />
+                    <span>PENGATURAN POP-UP BANNER PROMO GROSIR (MODAL TENGAH)</span>
+                  </div>
+                  <p className="text-xs text-zinc-300 max-w-2xl">
+                    Sesuaikan seluruh isi teks pada Pop-Up Promo Partai Besar. Setiap perubahan langsung tersimpan otomatis ke <strong>localStorage</strong> dan tersinkronisasi ke <strong>Supabase</strong>.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateWholesalePopup({ enabled: !wholesalePopup.enabled })
+                    }
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-mono text-xs font-extrabold cursor-pointer transition-all ${
+                      wholesalePopup.enabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                    }`}
+                  >
+                    {wholesalePopup.enabled ? (
+                      <>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>POP-UP OTOMATIS: AKTIF</span>
+                      </>
+                    ) : (
+                      <>
+                        <EyeOff className="w-3.5 h-3.5" />
+                        <span>POP-UP OTOMATIS: NONAKTIF</span>
+                      </>
+                    )}
+                  </button>
+
+                  {onPreviewWholesalePopup && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        window.setTimeout(() => onPreviewWholesalePopup(), 120);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold text-xs cursor-pointer transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Tes Buka Pop-Up di Web</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateWholesalePopup(DEFAULT_WHOLESALE_POPUP_CONFIG)
+                    }
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-xs font-semibold cursor-pointer"
+                    title="Kembalikan teks pop-up ke standar awal"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Default</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left 7 Columns: Form Inputs */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
+                    <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-zinc-900 border-b border-zinc-200 pb-2">
+                      A. Judul Banner & Deskripsi Penawaran
+                    </h3>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-700 mb-1">
+                        Label Lencana Atas (Badge Text)
+                      </label>
+                      <input
+                        type="text"
+                        value={wholesalePopup.badgeText}
+                        onChange={(e) =>
+                          updateWholesalePopup({ badgeText: e.target.value })
+                        }
+                        placeholder="OFFICIAL B2B WHOLESALE · TANGAN PERTAMA"
+                        className="w-full px-3.5 py-2 text-xs font-mono font-bold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-700 mb-1">
+                        Judul Utama Banner Pop-Up *
+                      </label>
+                      <input
+                        type="text"
+                        value={wholesalePopup.title}
+                        onChange={(e) =>
+                          updateWholesalePopup({ title: e.target.value })
+                        }
+                        placeholder="Pusat Grosir Tas Import Tangan Pertama — Harga Khusus Partai Besar & Reseller!"
+                        className="w-full px-3.5 py-2 text-sm font-bold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-700 mb-1">
+                        Deskripsi Penawaran Grosir
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={wholesalePopup.description}
+                        onChange={(e) =>
+                          updateWholesalePopup({ description: e.target.value })
+                        }
+                        placeholder="Katalog website menampilkan harga satuan normal. Untuk pemilik toko, reseller aktif, dan pembelian partai besar..."
+                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none leading-relaxed"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Poin-Poin Syarat Singkat */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 pb-2">
+                      <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-zinc-900">
+                        B. Poin-Poin Syarat Singkat Partai Besar
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={handleAddWholesalePopupPoint}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-bold cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Tambah Poin Syarat</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-700 mb-1">
+                          Subjudul Kotak Syarat
+                        </label>
+                        <input
+                          type="text"
+                          value={wholesalePopup.termsBadgeText}
+                          onChange={(e) =>
+                            updateWholesalePopup({
+                              termsBadgeText: e.target.value,
+                            })
+                          }
+                          placeholder="SYARAT & KETENTUAN SINGKAT PARTAI BESAR"
+                          className="w-full px-3 py-2 text-xs font-mono font-bold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-700 mb-1">
+                          Kalimat Kutipan Ringkas (Tagline Syarat)
+                        </label>
+                        <input
+                          type="text"
+                          value={wholesalePopup.termsTagline}
+                          onChange={(e) =>
+                            updateWholesalePopup({
+                              termsTagline: e.target.value,
+                            })
+                          }
+                          placeholder="Minimum order partai besar, bebas campur SKU & warna, garansi retur 100%"
+                          className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <label className="block text-xs font-bold text-zinc-700">
+                        Daftar Poin Syarat ({wholesalePopup.termsPoints.length} Poin)
+                      </label>
+                      {wholesalePopup.termsPoints.map((pt, idx) => (
+                        <div key={idx} className="flex items-start gap-2">
+                          <span className="w-6 h-8 flex items-center justify-center font-mono text-xs font-extrabold text-zinc-500 shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <input
+                            type="text"
+                            value={pt}
+                            onChange={(e) =>
+                              updateWholesalePopupPoint(idx, e.target.value)
+                            }
+                            placeholder={`Poin syarat ke-${idx + 1}...`}
+                            className="flex-1 px-3 py-2 text-xs rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                          />
+                          {wholesalePopup.termsPoints.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRemoveWholesalePopupPoint(idx)
+                              }
+                              aria-label={`Hapus poin ${idx + 1}`}
+                              className="p-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Teks Tombol WhatsApp & Pesan WA */}
+                  <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
+                    <h3 className="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-zinc-900 border-b border-zinc-200 pb-2">
+                      C. Teks Tombol WhatsApp & Tombol Tutup
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-emerald-800 mb-1">
+                          Teks Tombol Utama WhatsApp
+                        </label>
+                        <input
+                          type="text"
+                          value={wholesalePopup.whatsappButtonText}
+                          onChange={(e) =>
+                            updateWholesalePopup({
+                              whatsappButtonText: e.target.value,
+                            })
+                          }
+                          placeholder="Chat Admin Sales via WhatsApp"
+                          className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-emerald-400 bg-emerald-50/40 focus:border-zinc-950 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-700 mb-1">
+                          Teks Tombol Tutup Bawah
+                        </label>
+                        <input
+                          type="text"
+                          value={wholesalePopup.closeButtonText}
+                          onChange={(e) =>
+                            updateWholesalePopup({
+                              closeButtonText: e.target.value,
+                            })
+                          }
+                          placeholder="Tutup & Lihat Katalog"
+                          className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-700 mb-1">
+                        Template Pesan Saat Tombol WhatsApp Diklik (Gunakan{' '}
+                        <code className="text-amber-700 font-mono">
+                          {'{storeName}'}
+                        </code>{' '}
+                        untuk Nama Toko)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={wholesalePopup.whatsappMessageTemplate}
+                        onChange={(e) =>
+                          updateWholesalePopup({
+                            whatsappMessageTemplate: e.target.value,
+                          })
+                        }
+                        className="w-full px-3.5 py-2 text-xs font-mono rounded-lg border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right 5 Columns: Live Card Modal Preview */}
+                <div className="lg:col-span-5 space-y-2 lg:sticky lg:top-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-zinc-700">
+                      Pratinjau Langsung Kartu Pop-Up (Real-Time)
+                    </span>
+                    <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                      Ukuran Proporsional (max-w-lg)
+                    </span>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-zinc-900/65 backdrop-blur-md border border-zinc-300 shadow-inner">
+                    <div className="rounded-2xl bg-zinc-950 text-white border border-white/15 ring-1 ring-amber-400/35 shadow-xl overflow-hidden">
+                      <div className="h-1 w-full bg-gradient-to-r from-amber-400 via-amber-300 to-emerald-400" />
+                      <div className="p-4 border-b border-zinc-800/80 bg-gradient-to-b from-zinc-900/90 to-zinc-950 relative">
+                        <span className="absolute top-3 right-3 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-400 flex items-center justify-center text-[10px]">
+                          ✕
+                        </span>
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/35 text-amber-300 font-mono text-[9px] font-extrabold uppercase tracking-wider mb-2">
+                          <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                          <span>{wholesalePopup.badgeText}</span>
+                        </div>
+                        <h4 className="font-display text-sm sm:text-base font-extrabold text-white leading-snug pr-6">
+                          {wholesalePopup.title}
+                        </h4>
+                        <p className="text-[11px] text-zinc-300 mt-1.5 leading-relaxed">
+                          {wholesalePopup.description}
+                        </p>
+                      </div>
+
+                      <div className="p-4 space-y-3 bg-zinc-950">
+                        <div className="p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 space-y-1.5">
+                          <div className="flex items-center justify-between border-b border-zinc-800 pb-1">
+                            <span className="font-mono text-[9px] font-extrabold uppercase text-amber-400">
+                              {wholesalePopup.termsBadgeText}
+                            </span>
+                            <span className="font-mono text-[9px] text-emerald-300">
+                              ● Import Original
+                            </span>
+                          </div>
+                          {wholesalePopup.termsTagline && (
+                            <p className="text-[10px] font-bold text-amber-200 italic">
+                              “{wholesalePopup.termsTagline}”
+                            </p>
+                          )}
+                          <ul className="space-y-1 text-[10px] text-zinc-300">
+                            {wholesalePopup.termsPoints.map((pt, i) => (
+                              <li key={i} className="flex items-start gap-1.5">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
+                                <span>{pt}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-1.5">
+                          <span className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 text-white font-extrabold text-[10px] text-center">
+                            {wholesalePopup.whatsappButtonText}
+                          </span>
+                          <span className="py-2 px-3 rounded-xl bg-zinc-900 text-zinc-300 border border-zinc-700 font-bold text-[10px] text-center">
+                            {wholesalePopup.closeButtonText}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1544,19 +2125,23 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
                                 value={prod.category}
                                 onChange={(e) =>
                                   handleInlineProductChange(prod.id, {
-                                    category: e.target.value as Exclude<
-                                      ProductCategory,
-                                      'Semua'
-                                    >,
+                                    category: e.target.value,
                                   })
                                 }
                                 className="w-full px-2 py-1.5 text-xs font-semibold rounded border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
                               >
-                                {EDITABLE_PRODUCT_CATEGORIES.map((cat) => (
-                                  <option key={cat} value={cat}>
-                                    {cat}
-                                  </option>
-                                ))}
+                                {Array.from(
+                                  new Set([
+                                    ...dynamicEditableCategoryNames,
+                                    prod.category,
+                                  ])
+                                )
+                                  .filter(Boolean)
+                                  .map((cat) => (
+                                    <option key={cat} value={cat}>
+                                      {cat}
+                                    </option>
+                                  ))}
                               </select>
                             </td>
 
@@ -3115,6 +3700,946 @@ export const AdminAppearanceModal: React.FC<AdminAppearanceModalProps> = ({
                         </span>
                       </div>
                     </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB MANAJEMEN ARTIKEL & BLOG SEO */}
+          {activeTab === 'articles' && (
+            <div className="space-y-6">
+              {/* Top Info Banner */}
+              <div className="p-5 rounded-2xl bg-zinc-950 text-white border border-zinc-800 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="font-mono text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                    MANAJEMEN ARTIKEL & BLOG EDUKASI RESELLER (SEO)
+                  </span>
+                  <h3 className="font-display text-lg font-bold text-white">
+                    KELOLA ARTIKEL & TIPS BISNIS ({articles.length} ARTIKEL AKTIF)
+                  </h3>
+                  <p className="text-xs text-zinc-300 mt-0.5">
+                    Tambah artikel baru, perbarui isi panduan bisnis, atau hapus artikel. Semua perubahan langsung tersimpan ke localStorage & tersinkronisasi ke Cloud Supabase.
+                  </p>
+                </div>
+                {editingArticleId && (
+                  <button
+                    type="button"
+                    onClick={resetArticleForm}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-black cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Buat Artikel Baru
+                  </button>
+                )}
+              </div>
+
+              {articleStatusMsg && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{articleStatusMsg}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setArticleStatusMsg(null)}
+                    className="text-emerald-700 hover:text-emerald-950 font-black px-2 cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left 7 Columns: Form Tambah / Edit Artikel */}
+                <div className="lg:col-span-7 p-5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
+                  <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-700">
+                        {editingArticleId ? 'MODE EDIT ARTIKEL' : 'FORM ARTIKEL BARU'}
+                      </span>
+                      <h4 className="text-sm sm:text-base font-black text-zinc-950">
+                        {editingArticleId
+                          ? `Edit Artikel: ${artTitle || 'Tanpa Judul'}`
+                          : 'Tambah Artikel & Tips Bisnis Baru'}
+                      </h4>
+                    </div>
+                    {editingArticleId && (
+                      <button
+                        type="button"
+                        onClick={resetArticleForm}
+                        className="px-2.5 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-bold cursor-pointer"
+                      >
+                        Batal Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Judul Artikel */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 mb-1">
+                      Judul Artikel SEO *
+                    </label>
+                    <input
+                      type="text"
+                      value={artTitle}
+                      onChange={(e) => setArtTitle(e.target.value)}
+                      placeholder="Contoh: 5 Strategi Jualan Tas Import Laris Manis untuk Reseller Pemula"
+                      className="w-full px-3.5 py-2 text-xs sm:text-sm font-bold rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Kategori, Tanggal & Estimasi Baca */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-800 mb-1">
+                        Kategori Artikel *
+                      </label>
+                      <input
+                        type="text"
+                        value={artCategory}
+                        onChange={(e) => setArtCategory(e.target.value)}
+                        placeholder="Strategi Bisnis"
+                        className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                      />
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {['Strategi Bisnis', 'Logistik & Kargo', 'Riset Produk', 'Tips Dropship'].map(
+                          (presetCat) => (
+                            <button
+                              key={presetCat}
+                              type="button"
+                              onClick={() => setArtCategory(presetCat)}
+                              className="px-2 py-0.5 rounded bg-zinc-200/80 hover:bg-amber-200 text-[10px] font-semibold text-zinc-700 cursor-pointer"
+                            >
+                              {presetCat}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-800 mb-1">
+                        Tanggal Posting
+                      </label>
+                      <input
+                        type="text"
+                        value={artPublishedAt}
+                        onChange={(e) => setArtPublishedAt(e.target.value)}
+                        placeholder="14 Mei 2025"
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-zinc-800 mb-1">
+                        Estimasi Baca & Penulis
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          value={artReadTime}
+                          onChange={(e) => setArtReadTime(e.target.value)}
+                          placeholder="4 Menit Baca"
+                          className="w-full px-2.5 py-2 text-xs rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={artAuthor}
+                          onChange={(e) => setArtAuthor(e.target.value)}
+                          placeholder="Tim Edukasi TGI"
+                          className="w-full px-2.5 py-2 text-xs rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ringkasan Singkat (Excerpt) */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 mb-1">
+                      Ringkasan Singkat (Tampil di Kartu Daftar Artikel) *
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={artExcerpt}
+                      onChange={(e) => setArtExcerpt(e.target.value)}
+                      placeholder="Tuliskan 1-2 kalimat ringkasan menarik yang mengajak pengunjung mengklik Baca Selengkapnya..."
+                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Isi Artikel / Rich Text */}
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                      <label className="block text-xs font-bold text-zinc-800">
+                        Isi Artikel Lengkap (Mendukung Paragraf, Subjudul ## & Poin - ) *
+                      </label>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setArtContent((prev) =>
+                              `${prev ? `${prev}\n\n` : ''}## Subjudul Bagian Baru\n\nTuliskan penjelasan paragraf di sini...`
+                            )
+                          }
+                          className="px-2 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-[10px] font-bold cursor-pointer"
+                        >
+                          + Subjudul (##)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setArtContent((prev) =>
+                              `${prev ? `${prev}\n\n` : ''}- Poin penting pertama: Penjelasan singkat untuk mitra reseller.\n- Poin penting kedua: Tips tambahan agar margin tetap tebal.\n- Poin penting ketiga: Strategi pengiriman kargo hemat.`
+                            )
+                          }
+                          className="px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-bold cursor-pointer"
+                        >
+                          + Daftar Poin Bullet (-)
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      rows={8}
+                      value={artContent}
+                      onChange={(e) => setArtContent(e.target.value)}
+                      placeholder={`Tuliskan paragraf pembuka artikel di sini...\n\n## Subjudul Strategi Reseller\n\n- Poin pertama yang mudah dipahami\n- Poin kedua tentang pemilihan SKU tas import\n- Poin ketiga tentang ekspedisi kargo`}
+                      className="w-full px-3.5 py-2.5 text-xs leading-relaxed rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none font-sans"
+                    />
+                  </div>
+
+                  {/* URL Gambar Utama / Upload Banner Artikel */}
+                  <div className="p-3.5 rounded-xl bg-white border border-zinc-200 space-y-3">
+                    <label className="block text-xs font-bold text-zinc-800">
+                      URL Gambar Utama / Banner Artikel
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                      <div className="sm:col-span-4 h-24 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-200">
+                        <img
+                          src={artImageUrl || createHeroLookbookSvg(0)}
+                          alt="Preview Artikel"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            target.onerror = null;
+                            target.src = createHeroLookbookSvg(0);
+                          }}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="sm:col-span-8 space-y-2">
+                        <input
+                          type="text"
+                          value={artImageUrl}
+                          onChange={(e) => setArtImageUrl(e.target.value)}
+                          placeholder="https://... atau pilih foto dari perangkat"
+                          className="w-full px-3 py-1.5 text-xs rounded-lg border border-zinc-300 bg-zinc-50 focus:bg-white focus:border-zinc-950 focus:outline-none"
+                        />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-[11px] font-bold cursor-pointer">
+                            <Upload className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Upload Gambar Banner</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                try {
+                                  const compressed =
+                                    await compressImageFileToDataUrl(
+                                      file,
+                                      1200,
+                                      0.82
+                                    );
+                                  setArtImageUrl(compressed);
+                                } catch {
+                                  // ignore
+                                }
+                              }}
+                            />
+                          </label>
+                          {[0, 1, 2].map((presetIdx) => (
+                            <button
+                              key={presetIdx}
+                              type="button"
+                              onClick={() =>
+                                setArtImageUrl(
+                                  createHeroLookbookSvg(presetIdx as 0 | 1 | 2)
+                                )
+                              }
+                              className="px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-[10px] font-bold cursor-pointer"
+                            >
+                              Ilustrasi #{presetIdx + 1}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Button: Save New or Update Article */}
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    {editingArticleId && (
+                      <button
+                        type="button"
+                        onClick={resetArticleForm}
+                        className="px-4 py-2.5 rounded-xl border border-zinc-300 text-zinc-700 text-xs font-bold hover:bg-zinc-100 cursor-pointer"
+                      >
+                        Reset Form
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleanTitle = artTitle.trim();
+                        const cleanExcerpt = artExcerpt.trim();
+                        const cleanContent = artContent.trim();
+                        if (!cleanTitle || !cleanContent) {
+                          setArticleStatusMsg(
+                            'Mohon lengkapi minimal Judul Artikel dan Isi Artikel terlebih dahulu.'
+                          );
+                          return;
+                        }
+                        const articlePayload: BlogArticle = {
+                          id: editingArticleId || `art-${Date.now()}`,
+                          title: cleanTitle,
+                          category: artCategory.trim() || 'Strategi Bisnis',
+                          publishedAt:
+                            artPublishedAt.trim() ||
+                            new Date().toLocaleDateString('id-ID', {
+                              day: '2-digit',
+                              month: 'long',
+                              year: 'numeric',
+                            }),
+                          readTime: artReadTime.trim() || '4 Menit Baca',
+                          author: artAuthor.trim() || 'Tim Edukasi Bisnis TGI',
+                          excerpt:
+                            cleanExcerpt ||
+                            cleanContent.replace(/^#+\s+/gm, '').slice(0, 150) +
+                              '...',
+                          content: cleanContent,
+                          imageUrl:
+                            artImageUrl.trim() || createHeroLookbookSvg(0),
+                          updatedAt: new Date().toISOString(),
+                        };
+
+                        const nextArticles = editingArticleId
+                          ? articles.map((a) =>
+                              a.id === editingArticleId ? articlePayload : a
+                            )
+                          : [articlePayload, ...articles];
+
+                        onUpdateArticles?.(nextArticles);
+                        setArticleStatusMsg(
+                          editingArticleId
+                            ? `Artikel "${cleanTitle}" berhasil diperbarui & disimpan ke Cloud!`
+                            : `Artikel baru "${cleanTitle}" berhasil diterbitkan & disimpan ke Cloud!`
+                        );
+                        resetArticleForm();
+                      }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-950 hover:bg-amber-400 text-white hover:text-zinc-950 text-xs font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>
+                        {editingArticleId
+                          ? 'Simpan Perubahan Artikel'
+                          : 'Terbitkan Artikel Baru'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right 5 Columns: Daftar Artikel Terbit */}
+                <div className="lg:col-span-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-900">
+                      Daftar Artikel Terbit ({articles.length})
+                    </h4>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                    {articles.map((art, idx) => {
+                      const isBeingEdited = editingArticleId === art.id;
+                      return (
+                        <div
+                          key={art.id}
+                          className={`p-3.5 rounded-2xl border transition-all ${
+                            isBeingEdited
+                              ? 'bg-amber-50/70 border-amber-400 shadow-xs'
+                              : 'bg-white border-zinc-200 hover:border-zinc-300'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <img
+                              src={
+                                art.imageUrl ||
+                                createHeroLookbookSvg((idx % 3) as 0 | 1 | 2)
+                              }
+                              alt={art.title}
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                target.onerror = null;
+                                target.src = createHeroLookbookSvg(
+                                  (idx % 3) as 0 | 1 | 2
+                                );
+                              }}
+                              className="w-16 h-16 rounded-xl object-cover bg-zinc-900 shrink-0 border border-zinc-200"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="px-2 py-0.5 rounded bg-amber-400/30 text-amber-950 text-[10px] font-black uppercase">
+                                  {art.category}
+                                </span>
+                                <span className="text-[10px] text-zinc-500">
+                                  {art.publishedAt}
+                                </span>
+                              </div>
+                              <h5 className="text-xs font-black text-zinc-900 line-clamp-2 leading-snug">
+                                {art.title}
+                              </h5>
+                              <p className="text-[11px] text-zinc-500 line-clamp-2 mt-1">
+                                {art.excerpt}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-zinc-100">
+                            <button
+                              type="button"
+                              onClick={() => loadArticleIntoForm(art)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-amber-400 text-white hover:text-zinc-950 text-[11px] font-bold transition-colors cursor-pointer"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              <span>Edit Artikel</span>
+                            </button>
+
+                            {confirmDeleteArticleId === art.id ? (
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = articles.filter(
+                                      (a) => a.id !== art.id
+                                    );
+                                    onUpdateArticles?.(next);
+                                    if (editingArticleId === art.id) {
+                                      resetArticleForm();
+                                    }
+                                    setConfirmDeleteArticleId(null);
+                                    setArticleStatusMsg(
+                                      `Artikel "${art.title}" telah dihapus.`
+                                    );
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+                                >
+                                  Ya, Hapus
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirmDeleteArticleId(null)
+                                  }
+                                  className="px-2 py-1.5 rounded-lg bg-zinc-100 text-zinc-700 text-[11px] font-bold cursor-pointer"
+                                >
+                                  Batal
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setConfirmDeleteArticleId(art.id)
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Hapus</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB MANAJEMEN KATEGORI PRODUK (SINKRONISASI REAL-TIME DROPDOWN & KATALOG) */}
+          {activeTab === 'categories' && (
+            <div className="space-y-6">
+              {/* Top Info Banner */}
+              <div className="p-5 rounded-2xl bg-zinc-950 text-white border border-zinc-800 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="font-mono text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                    MANAJEMEN KATEGORI PRODUK · SINKRONISASI REAL-TIME DROPDOWN MENU & DATABASE
+                  </span>
+                  <h3 className="font-display text-lg font-bold text-white">
+                    KELOLA DAFTAR KATEGORI TAS ({draftCategories.length} KATEGORI AKTIF)
+                  </h3>
+                  <p className="text-xs text-zinc-300 mt-0.5">
+                    Tambah kategori baru (seperti Sling Bag, Wallet, Travel Bag, Tote Bag), ubah nama kategori, atau hapus kategori yang tidak terpakai. Perubahan langsung memperbarui menu dropdown "Kategori" di navigasi utama, filter katalog, serta tersimpan otomatis ke localStorage & Supabase.
+                  </p>
+                </div>
+                {editingCatId && (
+                  <button
+                    type="button"
+                    onClick={resetCategoryForm}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-black cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Tambah Kategori Baru
+                  </button>
+                )}
+              </div>
+
+              {categoryStatusMsg && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{categoryStatusMsg}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCategoryStatusMsg(null)}
+                    className="text-emerald-700 hover:text-emerald-950 font-black px-2 cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left 5 Columns: Form Tambah / Edit Kategori */}
+                <div className="lg:col-span-5 p-5 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-4">
+                  <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-700">
+                        {editingCatId ? 'MODE EDIT KATEGORI' : 'FORM KATEGORI BARU'}
+                      </span>
+                      <h4 className="text-sm sm:text-base font-black text-zinc-950">
+                        {editingCatId
+                          ? `Edit Kategori: ${editingCatOriginalName}`
+                          : 'Tambah Kategori Produk Baru'}
+                      </h4>
+                    </div>
+                    {editingCatId && (
+                      <button
+                        type="button"
+                        onClick={resetCategoryForm}
+                        className="px-2.5 py-1 rounded-lg bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-bold cursor-pointer"
+                      >
+                        Batal Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Preset Chips for Fast Category Creation */}
+                  {!editingCatId && (
+                    <div className="space-y-1.5">
+                      <span className="block text-[11px] font-bold text-zinc-600">
+                        Preset Cepat Kategori Populer (Klik untuk Isi Otomatis):
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          {
+                            name: 'Sling Bag',
+                            desc: 'Tas selempang ringkas harian wanita & pria import',
+                            badge: 'Laris',
+                          },
+                          {
+                            name: 'Wallet',
+                            desc: 'Dompet kartu, dompet panjang & pouch koin kulit import',
+                            badge: 'Margin Tinggi',
+                          },
+                          {
+                            name: 'Travel Bag',
+                            desc: 'Tas duffel & koper kabin lipat kapasitas besar',
+                            badge: 'Kargo Hemat',
+                          },
+                          {
+                            name: 'Tote Bag',
+                            desc: 'Tas bahu kapasitas besar muat laptop & dokumen kerja',
+                            badge: 'Best Seller',
+                          },
+                          {
+                            name: 'Clutch Pesta',
+                            desc: 'Tas genggam kondangan & pesta aksen kristal mewah',
+                            badge: 'Premium',
+                          },
+                          {
+                            name: 'Waist Bag',
+                            desc: 'Tas pinggang & dada sporty tahan air untuk aktivitas harian',
+                            badge: 'Baru',
+                          },
+                        ].map((preset) => {
+                          const alreadyExists = draftCategories.some(
+                            (c) =>
+                              c.name.toLowerCase() === preset.name.toLowerCase()
+                          );
+                          return (
+                            <button
+                              key={preset.name}
+                              type="button"
+                              onClick={() => {
+                                setCatName(preset.name);
+                                setCatDescription(preset.desc);
+                                setCatBadge(preset.badge);
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                alreadyExists
+                                  ? 'bg-zinc-100 text-zinc-400 border-zinc-200'
+                                  : 'bg-white hover:bg-amber-50 text-zinc-800 border-zinc-300 hover:border-amber-400'
+                              }`}
+                            >
+                              + {preset.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 mb-1">
+                      Nama / Label Kategori *
+                    </label>
+                    <input
+                      type="text"
+                      value={catName}
+                      onChange={(e) => setCatName(e.target.value)}
+                      placeholder="Contoh: Sling Bag, Wallet, Travel Bag..."
+                      className="w-full px-3.5 py-2 text-sm font-bold rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 mb-1">
+                      Deskripsi Singkat (Tampil di Dropdown Menu Kategori)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={catDescription}
+                      onChange={(e) => setCatDescription(e.target.value)}
+                      placeholder="Contoh: Koleksi tas selempang import bahan kulit & nilon anti-air"
+                      className="w-full px-3.5 py-2 text-xs rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-800 mb-1">
+                      Label Badge Kecil (Opsional)
+                    </label>
+                    <input
+                      type="text"
+                      value={catBadge}
+                      onChange={(e) => setCatBadge(e.target.value)}
+                      placeholder="Contoh: Populer, Baru, Best Seller, Hemat..."
+                      className="w-full px-3.5 py-2 text-xs font-mono font-bold rounded-xl border border-zinc-300 bg-white focus:border-zinc-950 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    {editingCatId && (
+                      <button
+                        type="button"
+                        onClick={resetCategoryForm}
+                        className="px-4 py-2 rounded-xl border border-zinc-300 text-zinc-700 text-xs font-bold hover:bg-zinc-100 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleanName = catName.trim();
+                        if (!cleanName) {
+                          setCategoryStatusMsg(
+                            'Nama kategori tidak boleh kosong.'
+                          );
+                          return;
+                        }
+                        if (cleanName.toLowerCase() === 'semua') {
+                          setCategoryStatusMsg(
+                            'Label "Semua" sudah dicadangkan untuk opsi Semua Katalog Produk.'
+                          );
+                          return;
+                        }
+
+                        const duplicate = draftCategories.find(
+                          (c) =>
+                            c.name.toLowerCase() === cleanName.toLowerCase() &&
+                            c.id !== editingCatId
+                        );
+                        if (duplicate) {
+                          setCategoryStatusMsg(
+                            `Kategori "${cleanName}" sudah ada di dalam daftar.`
+                          );
+                          return;
+                        }
+
+                        const cleanDesc =
+                          catDescription.trim() ||
+                          `Koleksi produk ${cleanName} import tangan pertama`;
+                        const cleanBadge = catBadge.trim() || undefined;
+
+                        if (editingCatId) {
+                          const nextCategories = draftCategories.map((c) =>
+                            c.id === editingCatId
+                              ? {
+                                  ...c,
+                                  name: cleanName,
+                                  description: cleanDesc,
+                                  badge: cleanBadge,
+                                }
+                              : c
+                          );
+                          applyDraftUpdate((prev) => ({
+                            ...prev,
+                            categories: nextCategories,
+                            heroSlides: prev.heroSlides.map((s) =>
+                              s.targetCategory === editingCatOriginalName
+                                ? { ...s, targetCategory: cleanName }
+                                : s
+                            ),
+                          }));
+
+                          // Jika nama kategori berubah, perbarui juga seluruh produk yang memakai kategori lama
+                          if (
+                            editingCatOriginalName &&
+                            editingCatOriginalName !== cleanName &&
+                            onUpdateProducts
+                          ) {
+                            const updatedProds = products.map((p) =>
+                              p.category === editingCatOriginalName
+                                ? {
+                                    ...p,
+                                    category: cleanName,
+                                    updatedAt: new Date().toISOString(),
+                                  }
+                                : p
+                            );
+                            onUpdateProducts(updatedProds);
+                          }
+
+                          setCategoryStatusMsg(
+                            `Kategori "${editingCatOriginalName}" berhasil diperbarui menjadi "${cleanName}" & disinkronkan!`
+                          );
+                          resetCategoryForm();
+                        } else {
+                          const newCategory: CategoryItem = {
+                            id: `cat-${Date.now()}`,
+                            name: cleanName,
+                            description: cleanDesc,
+                            badge: cleanBadge,
+                          };
+                          const nextCategories = [
+                            ...draftCategories,
+                            newCategory,
+                          ];
+                          applyDraftUpdate((prev) => ({
+                            ...prev,
+                            categories: nextCategories,
+                          }));
+                          setCategoryStatusMsg(
+                            `Kategori baru "${cleanName}" berhasil ditambahkan ke dropdown menu utama & database!`
+                          );
+                          resetCategoryForm();
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-950 hover:bg-amber-400 text-white hover:text-zinc-950 text-xs font-black uppercase tracking-wider transition-all shadow-sm cursor-pointer"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>
+                        {editingCatId
+                          ? 'Simpan Perubahan Kategori'
+                          : '+ Tambah Kategori'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right 7 Columns: Tabel Daftar Kategori */}
+                <div className="lg:col-span-7 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-900">
+                      Tabel Kategori Sistem ({draftCategories.length} Kategori)
+                    </h4>
+                    <span className="text-[11px] font-mono text-zinc-500">
+                      Otomatis tampil di tombol dropdown "Kategori"
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-zinc-200 rounded-2xl bg-white">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-zinc-950 text-white font-mono text-[10px] uppercase">
+                          <th className="py-3 px-3 border-b border-zinc-800 w-10 text-center">
+                            No
+                          </th>
+                          <th className="py-3 px-3 border-b border-zinc-800">
+                            Nama Kategori & Deskripsi
+                          </th>
+                          <th className="py-3 px-3 border-b border-zinc-800 w-28 text-center">
+                            Badge
+                          </th>
+                          <th className="py-3 px-3 border-b border-zinc-800 w-28 text-center">
+                            Jumlah Produk
+                          </th>
+                          <th className="py-3 px-3 border-b border-zinc-800 w-40 text-right">
+                            Aksi
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-200">
+                        {draftCategories.map((cat, idx) => {
+                          const prodCount =
+                            cat.name === 'Promo Grosir'
+                              ? products.filter(
+                                  (p) =>
+                                    p.category === 'Promo Grosir' ||
+                                    p.isPromoGrosir
+                                ).length
+                              : products.filter((p) => p.category === cat.name)
+                                  .length;
+                          const isBeingEdited = editingCatId === cat.id;
+
+                          return (
+                            <tr
+                              key={cat.id || cat.name}
+                              className={`transition-colors ${
+                                isBeingEdited
+                                  ? 'bg-amber-50/70'
+                                  : 'hover:bg-zinc-50'
+                              }`}
+                            >
+                              <td className="py-3 px-3 text-center font-mono font-bold text-zinc-500">
+                                {idx + 1}
+                              </td>
+                              <td className="py-3 px-3">
+                                <p className="font-bold text-zinc-950 text-xs sm:text-sm">
+                                  {cat.name}
+                                </p>
+                                <p className="text-[11px] text-zinc-500 line-clamp-1 mt-0.5">
+                                  {cat.description}
+                                </p>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                {cat.badge ? (
+                                  <span className="inline-block px-2 py-0.5 bg-zinc-950 text-amber-400 font-mono text-[10px] font-bold uppercase">
+                                    {cat.badge}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-zinc-400">
+                                    —
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span className="inline-block px-2.5 py-1 rounded-lg bg-zinc-100 font-mono text-xs font-bold text-zinc-900">
+                                  {prodCount} SKU
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-right">
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => loadCategoryIntoForm(cat)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-amber-400 text-white hover:text-zinc-950 text-[11px] font-bold transition-colors cursor-pointer"
+                                  >
+                                    <Pencil className="w-3 h-3" />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  {confirmDeleteCatId === cat.id ? (
+                                    <div className="inline-flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (draftCategories.length <= 1) {
+                                            setCategoryStatusMsg(
+                                              'Minimal harus terdapat 1 kategori aktif di dalam sistem.'
+                                            );
+                                            setConfirmDeleteCatId(null);
+                                            return;
+                                          }
+                                          const nextCategories =
+                                            draftCategories.filter(
+                                              (c) => c.id !== cat.id
+                                            );
+                                          const fallbackCategory =
+                                            nextCategories[0]?.name ||
+                                            'Backpack';
+
+                                          applyDraftUpdate((prev) => ({
+                                            ...prev,
+                                            categories: nextCategories,
+                                          }));
+
+                                          if (
+                                            prodCount > 0 &&
+                                            onUpdateProducts
+                                          ) {
+                                            const reassigned = products.map(
+                                              (p) =>
+                                                p.category === cat.name
+                                                  ? {
+                                                      ...p,
+                                                      category:
+                                                        fallbackCategory,
+                                                      updatedAt:
+                                                        new Date().toISOString(),
+                                                    }
+                                                  : p
+                                            );
+                                            onUpdateProducts(reassigned);
+                                          }
+
+                                          if (editingCatId === cat.id) {
+                                            resetCategoryForm();
+                                          }
+                                          setConfirmDeleteCatId(null);
+                                          setCategoryStatusMsg(
+                                            prodCount > 0
+                                              ? `Kategori "${cat.name}" dihapus & ${prodCount} produk dialihkan ke "${fallbackCategory}".`
+                                              : `Kategori "${cat.name}" berhasil dihapus.`
+                                          );
+                                        }}
+                                        className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-[11px] font-bold cursor-pointer"
+                                      >
+                                        Ya, Hapus
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setConfirmDeleteCatId(null)
+                                        }
+                                        className="px-2 py-1.5 rounded-lg bg-zinc-100 text-zinc-700 text-[11px] font-bold cursor-pointer"
+                                      >
+                                        Batal
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setConfirmDeleteCatId(cat.id)
+                                      }
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Hapus</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>

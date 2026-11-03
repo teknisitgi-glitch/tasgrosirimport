@@ -1,9 +1,11 @@
-export type ProductCategory =
-  | 'Semua'
-  | 'Backpack'
-  | 'Handbag'
-  | 'Shoulder Bag'
-  | 'Promo Grosir';
+export type ProductCategory = string;
+
+export interface CategoryItem {
+  id: string;
+  name: string;
+  description: string;
+  badge?: string;
+}
 
 export type StockStatusLabel =
   | 'Ready Stock'
@@ -15,7 +17,7 @@ export interface Product {
   id: string;
   sku: string;
   name: string;
-  category: Exclude<ProductCategory, 'Semua'>;
+  category: string;
   normalPrice: number;
   salePrice: number;
   wholesaleMinQty: number;
@@ -176,14 +178,29 @@ export interface ResellerGuideConfig {
   cargoTable: ResellerGuideCargoRow[];
 }
 
+export interface WholesalePopupConfig {
+  enabled: boolean;
+  badgeText: string;
+  title: string;
+  description: string;
+  termsBadgeText: string;
+  termsTagline: string;
+  termsPoints: string[];
+  whatsappButtonText: string;
+  closeButtonText: string;
+  whatsappMessageTemplate: string;
+}
+
 export interface UiContentConfig {
   announcementText?: string;
+  categories?: CategoryItem[];
   heroSlides: HeroSlideItem[];
   vouchers: [VoucherItem, VoucherItem, VoucherItem];
   bentoCards: [BentoCardItem, BentoCardItem, BentoCardItem];
   catalogLayout: CatalogLayoutConfig;
   liveShopping: LiveShoppingConfig;
   resellerGuide?: ResellerGuideConfig;
+  wholesalePopup?: WholesalePopupConfig;
   updatedAt: string;
 }
 
@@ -226,5 +243,15 @@ export interface OrderRecord {
   createdAt: string;
 }
 
-
-
+export interface BlogArticle {
+  id: string;
+  title: string;
+  category: string;
+  excerpt: string;
+  content: string;
+  imageUrl: string;
+  publishedAt: string;
+  readTime?: string;
+  author?: string;
+  updatedAt?: string;
+}

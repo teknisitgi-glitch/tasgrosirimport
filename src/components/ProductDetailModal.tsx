@@ -16,6 +16,9 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  ShieldCheck,
+  PackageCheck,
+  AlertCircle,
 } from 'lucide-react';
 import { Product, StoreConfig, StockStatusLabel } from '../types/product';
 import {
@@ -170,16 +173,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const lowStockCount =
     product.stock > 0 && product.stock <= 15 ? product.stock : 3;
 
-  const targetMoq = Math.max(1, product.wholesaleMinQty || 6);
-  const isWholesaleQty = totalBatchQuantity >= targetMoq;
-  const activeUnitPrice = isWholesaleQty
-    ? product.wholesalePrice
-    : product.salePrice;
-
-  const hematNominal =
-    product.salePrice > product.wholesalePrice
-      ? product.salePrice - product.wholesalePrice
-      : Math.max(0, product.normalPrice - product.wholesalePrice);
+  const activeUnitPrice = product.salePrice;
 
   const unitWeightGrams = product.weightGrams || 600;
   const totalWeightKg = ((unitWeightGrams * quantity) / 1000).toFixed(2);
@@ -239,19 +233,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     }
   };
 
-  const handleDistributeMoqEvenly = () => {
-    const count = productColorsList.length;
-    const basePerColor = Math.floor(targetMoq / count);
-    let remainder = targetMoq % count;
-    const nextMap: Record<string, number> = {};
-    productColorsList.forEach((col) => {
-      const extra = remainder > 0 ? 1 : 0;
-      if (remainder > 0) remainder -= 1;
-      nextMap[col] = basePerColor + extra;
-    });
-    setColorQuantities(nextMap);
-  };
-
   const handleSetAllColorsQty = (qtyEach: number) => {
     const nextMap: Record<string, number> = {};
     productColorsList.forEach((col) => {
@@ -278,11 +259,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-zinc-950/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-zinc-950/65 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-backdrop-in"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl max-w-3xl w-full overflow-hidden border border-zinc-200 shadow-2xl grid grid-cols-1 md:grid-cols-12 my-4"
+        className="bg-white rounded-2xl max-w-3xl w-full overflow-hidden border border-zinc-200/90 shadow-2xl grid grid-cols-1 md:grid-cols-12 my-4 animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Left Column: Compact Multi-Photo & Multi-Sudut Quick View Gallery */}
@@ -307,19 +288,18 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = fallbackSvgUri;
               }}
-              className="w-full h-full object-contain transition-all duration-200"
+              className="w-full h-full object-contain transition-transform duration-500 ease-out hover:scale-105"
             />
 
             <div className="absolute top-2.5 left-2.5 flex flex-col items-start gap-1.5">
-              {(product.isSale || discountPercent > 0) && (
-                <div className="bg-zinc-950 text-amber-400 font-mono text-[11px] font-bold px-2.5 py-0.5 rounded-md">
-                  SALE {discountPercent > 0 ? `-${discountPercent}%` : ''}
-                </div>
-              )}
+              <div className="inline-flex items-center gap-1.5 bg-zinc-900/90 backdrop-blur-md text-white font-mono text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-sm border border-white/15">
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>Import Original</span>
+              </div>
               {isLowStock && resolvedStockStatus !== 'Habis' && (
-                <div className="inline-flex items-center gap-1 bg-red-600 text-white font-mono text-[10px] font-extrabold px-2 py-0.5 rounded-md shadow-xs animate-pulse">
-                  <Flame className="w-3 h-3 fill-amber-300 text-amber-300" />
-                  <span>Sisa {lowStockCount} pcs lagi!</span>
+                <div className="inline-flex items-center gap-1.5 bg-amber-50/95 backdrop-blur-md text-amber-900 font-mono text-[10px] font-extrabold px-2.5 py-1 rounded-lg shadow-sm border border-amber-300/80">
+                  <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-600 shrink-0" />
+                  <span>Stok Terbatas · Sisa {lowStockCount} pcs</span>
                 </div>
               )}
             </div>
@@ -417,21 +397,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   {product.sku}
                 </span>
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[10px] font-bold border ${
                     resolvedStockStatus === 'Habis'
-                      ? 'bg-red-50 text-red-700 border-red-200'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
                       : isLowStock
-                      ? 'bg-red-50 text-red-700 border-red-300 animate-pulse'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      ? 'bg-amber-50 text-amber-800 border-amber-200/90'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-200/90'
                   }`}
                 >
-                  {isLowStock && resolvedStockStatus !== 'Habis' ? (
-                    `🔥 Sisa ${lowStockCount} pcs lagi!`
+                  {resolvedStockStatus === 'Habis' ? (
+                    <>
+                      <AlertCircle className="w-3 h-3 text-rose-500" />
+                      <span>Stok Habis</span>
+                    </>
+                  ) : isLowStock ? (
+                    <>
+                      <Flame className="w-3 h-3 text-amber-500 fill-amber-500" />
+                      <span>Stok Terbatas ({product.stock} pcs)</span>
+                    </>
                   ) : (
                     <>
-                      <CheckCircle2 className="w-3 h-3" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <PackageCheck className="w-3 h-3 text-emerald-600" />
                       <span>
-                        {resolvedStockStatus} ({product.stock} pcs)
+                        Ready Stock Gudang ({product.stock} pcs)
                       </span>
                     </>
                   )}
@@ -441,7 +430,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 type="button"
                 onClick={onClose}
                 aria-label="Tutup Quick View"
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 cursor-pointer shrink-0"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 active:scale-90 transition-all cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -466,45 +455,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </div>
             </div>
 
-            {/* Compact Price & Dynamic Savings Box */}
-            <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200 space-y-1">
-              <div className="flex items-baseline gap-2.5 flex-wrap">
+            {/* Single Clean Normal/Retail Price & Wholesale Note Box */}
+            <div className="p-3.5 rounded-xl bg-zinc-50 border border-zinc-200 space-y-2">
+              <div className="flex items-baseline justify-between gap-2.5 flex-wrap">
                 <span className="font-mono text-xl sm:text-2xl font-bold text-zinc-950 tabular-nums">
                   {formatRupiah(activeUnitPrice)}
                 </span>
-                {product.normalPrice > activeUnitPrice && (
-                  <span className="font-mono text-xs text-zinc-400 line-through tabular-nums">
-                    {formatRupiah(product.normalPrice)}
-                  </span>
-                )}
-                {discountPercent > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-amber-400 text-zinc-950 font-mono text-[10px] font-extrabold">
-                    DISKON {discountPercent}%
-                  </span>
-                )}
+                <span className="px-2 py-0.5 rounded bg-zinc-900 text-white font-mono text-[10px] font-bold uppercase tracking-wider">
+                  Harga Satuan / Pcs
+                </span>
               </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                <p className="text-xs text-zinc-600">
-                  {isWholesaleQty ? (
-                    <span className="font-bold text-emerald-700">
-                      ✓ Harga Grosir Aktif (≥{product.wholesaleMinQty} pcs)
-                    </span>
-                  ) : (
-                    <span>
-                      Grosir ≥<strong>{product.wholesaleMinQty} pcs</strong>:{' '}
-                      <strong className="font-mono text-zinc-950">
-                        {formatRupiah(product.wholesalePrice)}/pcs
-                      </strong>
-                    </span>
-                  )}
+              <div className="pt-1.5 border-t border-zinc-200/80 flex items-start justify-between gap-2 text-xs text-zinc-600">
+                <p className="text-[11px] text-zinc-600 leading-relaxed italic">
+                  *Untuk pemesanan partai besar / grosir, silakan langsung chat Admin Sales kami via WhatsApp
                 </p>
-
-                {hematNominal > 0 && (
-                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/80 border border-emerald-300 px-2 py-0.5 rounded-md tabular-nums">
-                    (Hemat {formatRupiah(hematNominal)} dari harga ecer)
-                  </span>
-                )}
+                <a
+                  href={directWaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-extrabold shrink-0 transition-colors cursor-pointer"
+                >
+                  <MessageCircle className="w-3 h-3" />
+                  <span>Chat Admin</span>
+                </a>
               </div>
             </div>
 
@@ -525,11 +499,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <div className="flex flex-wrap items-center gap-1">
                   <button
                     type="button"
-                    onClick={handleDistributeMoqEvenly}
+                    onClick={() => handleSetAllColorsQty(1)}
                     className="px-2 py-1 rounded-md bg-amber-400 hover:bg-amber-300 text-zinc-950 font-mono text-[10px] font-extrabold transition-colors cursor-pointer"
-                    title={`Bagi rata ${targetMoq} pcs ke semua warna`}
+                    title="Set 1 pcs untuk setiap warna"
                   >
-                    Bagi Rata {targetMoq} Pcs
+                    Seri @1 Pcs
                   </button>
                   <button
                     type="button"
@@ -629,31 +603,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 })}
               </div>
 
-              {/* Dynamic Batch MOQ Progress Feedback */}
-              <div
-                className={`px-3 py-2 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
-                  isWholesaleQty
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                    : 'bg-amber-50/90 border-amber-200 text-amber-900'
-                }`}
-              >
-                <span className="font-semibold">
-                  {isWholesaleQty ? (
-                    <strong>
-                      Harga Grosir Aktif! 🚀 ({formatRupiah(product.wholesalePrice)}/pcs)
-                    </strong>
-                  ) : (
-                    <>
-                      💡 Kurang{' '}
-                      <strong className="font-mono font-extrabold">
-                        {Math.max(1, targetMoq - totalBatchQuantity)} pcs
-                      </strong>{' '}
-                      lagi untuk mengaktifkan Harga Grosir Pabrik!
-                    </>
-                  )}
+              {/* Batch Selection Summary */}
+              <div className="px-3 py-2 rounded-lg border border-zinc-200 bg-white text-[11px] flex items-center justify-between gap-2 text-zinc-700">
+                <span className="font-medium">
+                  Total kuantitas varian warna yang dipilih:
                 </span>
-                <span className="font-mono font-extrabold shrink-0">
-                  Total: {totalBatchQuantity} pcs
+                <span className="font-mono font-extrabold text-zinc-950 shrink-0">
+                  Total: {totalBatchQuantity} pcs ({formatRupiah(activeUnitPrice * quantity)})
                 </span>
               </div>
             </div>
@@ -808,7 +764,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 type="button"
                 disabled={resolvedStockStatus === 'Habis'}
                 onClick={handleAddBatchConfirm}
-                className="flex-1 py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:bg-zinc-200 disabled:text-zinc-500 text-zinc-950 font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="flex-1 py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 active:scale-[0.98] disabled:bg-zinc-200 disabled:text-zinc-500 text-zinc-950 font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer"
               >
                 <ShoppingBag className="w-4 h-4 stroke-[2.2]" />
                 <span>
@@ -821,7 +777,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 href={directWaUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-colors cursor-pointer shrink-0"
+                className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer shrink-0"
               >
                 <MessageCircle className="w-4 h-4" />
                 <span>Pesan via WA</span>

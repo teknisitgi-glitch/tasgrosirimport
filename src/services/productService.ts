@@ -1,9 +1,12 @@
 import {
   Product,
+  CategoryItem,
   StoreConfig,
   UiContentConfig,
   CustomerReview,
   OrderRecord,
+  BlogArticle,
+  WholesalePopupConfig,
 } from '../types/product';
 import {
   createBagStudioSvg,
@@ -17,6 +20,7 @@ const STORAGE_KEY_CONFIG = 'tgi_store_config_v1';
 const STORAGE_KEY_UI_CONTENT = 'tgi_ui_content_config_v1';
 const STORAGE_KEY_REVIEWS = 'tgi_customer_reviews_v2';
 const STORAGE_KEY_ORDERS = 'tgi_order_history_v2';
+const STORAGE_KEY_ARTICLES = 'tgi_blog_articles_v1';
 
 // Clean up legacy v1 dummy data keys from localStorage
 try {
@@ -177,9 +181,58 @@ export const DEFAULT_RESELLER_GUIDE_CONFIG: NonNullable<
   ],
 };
 
+export const DEFAULT_CATEGORIES: CategoryItem[] = [
+  {
+    id: 'cat-backpack',
+    name: 'Backpack',
+    description: 'Tas ransel wanita, pria, laptop & anti-air kualitas import',
+    badge: 'Populer',
+  },
+  {
+    id: 'cat-handbag',
+    name: 'Handbag',
+    description: 'Tas tangan pesta, kerja kantor & top handle kualitas butik',
+    badge: 'Margin Tinggi',
+  },
+  {
+    id: 'cat-shoulder-bag',
+    name: 'Shoulder Bag',
+    description: 'Tas bahu & selempang gaya Korea paling cepat repeat order',
+    badge: 'Fast Moving',
+  },
+  {
+    id: 'cat-promo-grosir',
+    name: 'Promo Grosir',
+    description: 'Potongan harga spesial untuk pembelian partai & seri mix 6 pcs',
+    badge: 'Hemat',
+  },
+];
+
+export const DEFAULT_WHOLESALE_POPUP_CONFIG: WholesalePopupConfig = {
+  enabled: true,
+  badgeText: 'OFFICIAL B2B WHOLESALE · TANGAN PERTAMA',
+  title:
+    'Pusat Grosir Tas Import Tangan Pertama — Harga Khusus Partai Besar & Reseller!',
+  description:
+    'Katalog website menampilkan harga satuan normal. Untuk pemilik toko, reseller aktif, dan pembelian partai besar / karungan, dapatkan penawaran harga khusus pabrik langsung via Tim Admin Sales kami.',
+  termsBadgeText: 'SYARAT & KETENTUAN SINGKAT PARTAI BESAR',
+  termsTagline:
+    'Minimum order partai besar, bebas campur SKU & warna, garansi retur 100%',
+  termsPoints: [
+    'Minimum Order Partai Besar: Skema harga khusus mulai paket reseller (≥6 pcs), lusinan, hingga partai karungan (≥30 pcs).',
+    'Bebas Campur SKU & Warna: Fleksibel mengombinasikan berbagai model tas dan varian warna dalam 1 faktur pesanan gudang.',
+    'Garansi Retur 100% (QC Gudang): Jaminan tukar unit baru apabila terdapat kendala produksi dengan klaim cepat & transparan.',
+  ],
+  whatsappButtonText: 'Chat Admin Sales via WhatsApp',
+  closeButtonText: 'Tutup & Lihat Katalog',
+  whatsappMessageTemplate:
+    'Halo Admin Sales *{storeName}*,\nSaya tertarik dengan penawaran *Pemesanan Partai Besar / Grosir Tas Import Tangan Pertama*.\n\nMohon informasi katalog harga khusus partai besar, syarat MOQ campur SKU, serta estimasi ongkir kargo ke kota saya. Terima kasih!',
+};
+
 export const DEFAULT_UI_CONTENT_CONFIG: UiContentConfig = {
   announcementText:
     'Harga Grosir Otomatis Min. 6 Pcs (Bebas Campur SKU & Warna) • Dukungan Resi Otomatis Marketplace & Pengiriman Kargo Partai Besar Se-Indonesia',
+  categories: DEFAULT_CATEGORIES,
   heroSlides: [
     {
       id: 'slide-1',
@@ -306,6 +359,7 @@ export const DEFAULT_UI_CONTENT_CONFIG: UiContentConfig = {
     liveVideoUrl: '',
   },
   resellerGuide: DEFAULT_RESELLER_GUIDE_CONFIG,
+  wholesalePopup: DEFAULT_WHOLESALE_POPUP_CONFIG,
   updatedAt: '2026-10-30T00:00:00.000Z',
 };
 
@@ -496,11 +550,33 @@ export function getUiContentConfig(): UiContentConfig {
       ...(rawLayout.sectionVisibility || {}),
     };
 
+    const normalizedCategories: CategoryItem[] =
+      Array.isArray(parsed.categories) && parsed.categories.length > 0
+        ? parsed.categories
+            .filter(
+              (c: any) =>
+                c && typeof c.name === 'string' && c.name.trim() !== '' && c.name.trim() !== 'Semua'
+            )
+            .map((c: any, idx: number) => ({
+              id: c.id || `cat-${idx}-${Date.now()}`,
+              name: c.name.trim(),
+              description:
+                typeof c.description === 'string' && c.description.trim()
+                  ? c.description.trim()
+                  : `Koleksi produk ${c.name.trim()} import tangan pertama`,
+              badge: typeof c.badge === 'string' ? c.badge.trim() : undefined,
+            }))
+        : DEFAULT_CATEGORIES;
+
     const result: UiContentConfig = {
       announcementText:
         typeof parsed.announcementText === 'string'
           ? parsed.announcementText
           : DEFAULT_UI_CONTENT_CONFIG.announcementText,
+      categories:
+        normalizedCategories.length > 0
+          ? normalizedCategories
+          : DEFAULT_CATEGORIES,
       heroSlides: normalizedSlides,
       vouchers:
         Array.isArray(parsed.vouchers) && parsed.vouchers.length === 3
@@ -541,6 +617,21 @@ export function getUiContentConfig(): UiContentConfig {
           parsed.resellerGuide.cargoTable.length > 0
             ? parsed.resellerGuide.cargoTable
             : DEFAULT_RESELLER_GUIDE_CONFIG.cargoTable,
+      },
+      wholesalePopup: {
+        ...DEFAULT_WHOLESALE_POPUP_CONFIG,
+        ...(parsed.wholesalePopup || {}),
+        enabled:
+          typeof parsed.wholesalePopup?.enabled === 'boolean'
+            ? parsed.wholesalePopup.enabled
+            : DEFAULT_WHOLESALE_POPUP_CONFIG.enabled,
+        termsPoints:
+          Array.isArray(parsed.wholesalePopup?.termsPoints) &&
+          parsed.wholesalePopup.termsPoints.length > 0
+            ? parsed.wholesalePopup.termsPoints.filter(
+                (pt: any) => typeof pt === 'string' && pt.trim() !== ''
+              )
+            : DEFAULT_WHOLESALE_POPUP_CONFIG.termsPoints,
       },
       updatedAt: parsed.updatedAt || new Date().toISOString(),
     };
@@ -657,6 +748,112 @@ export function saveLocalOrder(order: OrderRecord): OrderRecord[] {
   }
 }
 
+export const DEFAULT_BLOG_ARTICLES: BlogArticle[] = [
+  {
+    id: 'art-1',
+    title: 'Cara Memulai Bisnis Reseller Tas Import Modal Kecil namun Untung Maksimal',
+    category: 'Strategi Bisnis',
+    publishedAt: '12 Mei 2025',
+    readTime: '4 Menit Baca',
+    author: 'Tim Edukasi Bisnis TGI',
+    imageUrl: createHeroLookbookSvg(0),
+    excerpt:
+      'Pelajari cara memanfaatkan sistem MOQ 6 pcs bebas campur SKU untuk menguji pasar di kota Anda tanpa risiko stok menumpuk di gudang.',
+    content: `Memulai usaha toko tas import tidak harus langsung menyetok ratusan pcs per model. Di Tas Grosir Import (TGI), Anda cukup mengambil minimal 6 pcs (bebas campur model & warna) untuk langsung mendapatkan Harga Grosir Pabrik tangan pertama.
+
+## Langkah Praktis Memulai Bisnis Tas Import untuk Pemula
+
+- Pilih 6 model tas dari 3 kategori paling laris: 2 Backpack, 2 Shoulder Bag, dan 2 Slingbag agar calon pembeli memiliki variasi pilihan.
+- Gunakan foto studio & real-pict katalog TGI untuk diposting lebih dulu di WhatsApp Status, Instagram, Shopee, dan TikTok Shop.
+- Tetapkan margin keuntungan ideal 35% hingga 60% dari harga grosir pabrik (rata-rata reseller meraih profit Rp 35.000 – Rp 65.000 per pcs).
+- Manfaatkan sistem Dropship Resi Otomatis jika Anda baru mulai berjualan di marketplace tanpa harus stok barang di rumah.
+
+## Mengapa Sistem Seri Mix 6 Pcs Lebih Menguntungkan?
+
+Dengan sistem bebas campur SKU dan warna, perputaran modal (cashflow) toko Anda menjadi jauh lebih sehat. Anda bisa melihat model mana yang paling cepat habis di daerah Anda, lalu melakukan repeat order karungan khusus untuk SKU pemenang tersebut.`,
+    updatedAt: '2025-05-12T08:00:00.000Z',
+  },
+  {
+    id: 'art-2',
+    title: 'Rahasia Hemat Ongkir Kargo Partai Besar ke Luar Pulau Jawa hingga 70%',
+    category: 'Logistik & Kargo',
+    publishedAt: '10 Mei 2025',
+    readTime: '5 Menit Baca',
+    author: 'Divisi Logistik Gudang TGI',
+    imageUrl: createHeroLookbookSvg(1),
+    excerpt:
+      'Tips memilih ekspedisi darat dan laut (Indah Cargo, JTR, Dakota & Ekspedisi Kapuk/Tanah Abang) agar margin keuntungan per pcs tidak tergerus ongkir.',
+    content: `Salah satu kunci profitabilitas reseller luar pulau (Sumatera, Kalimantan, Sulawesi, Bali, hingga Papua) adalah efisiensi biaya kirim per kilogram. Pengiriman reguler udara seringkali memakan biaya tinggi, sedangkan kargo karungan mampu menekan ongkos kirim hingga 70%.
+
+## Tips Mengoptimalkan Berat Karung & Kubikasi Kargo
+
+- Gabungkan pesanan hingga mencapai bobot ideal kargo (minimal 10 kg atau setara 20–25 pcs tas) agar tarif per kg jauh lebih murah dibandingkan ekspedisi reguler.
+- Manfaatkan fitur Kalkulator Estimasi Berat & Ongkir Kargo di halaman Keranjang Belanja TGI untuk menghitung total gramasi aktual pesanan Anda secara otomatis.
+- Gunakan kode voucher FREEKARGO saat checkout untuk mendapatkan subsidi ongkir kargo langsung dari gudang TGI.
+- Untuk partai besar di atas 50 pcs, mintalah tim gudang TGI menyusun tas dengan teknik nesting (tas kecil dimasukkan ke ruang tas besar yang aman) guna menghemat kubikasi karung.`,
+    updatedAt: '2025-05-10T09:30:00.000Z',
+  },
+  {
+    id: 'art-3',
+    title: '5 Karakteristik Model Tas Wanita yang Paling Cepat Repeat Order di Live & Toko Offline',
+    category: 'Riset Produk',
+    publishedAt: '08 Mei 2025',
+    readTime: '4 Menit Baca',
+    author: 'Tim Kurator Katalog TGI',
+    imageUrl: createHeroLookbookSvg(2),
+    excerpt:
+      'Data penjualan gudang TGI menunjukkan warna netral, material waterproof, dan kompartemen multifungsi menyumbang 78% transaksi repeat order.',
+    content: `Berdasarkan ribuan nota transaksi reseller dan pemilik butik mitra TGI di seluruh Indonesia, pembeli akhir cenderung mencari tas yang memadukan tampilan elegan dengan fungsi harian yang tahan lama.
+
+## 5 Ciri Tas Import yang Paling Cepat Laku Keras
+
+- Warna Earth-Tone & Netral: Varian warna Black, Coffee, Khaki, dan Cream menyumbang perputaran stok tercepat karena mudah dipadukan dengan outfit kerja maupun kasual.
+- Material Tahan Cuaca: Bahan Ballistic Nylon Waterproof pada Backpack dan Pebbled Vegan Leather anti-gores pada Handbag menjadi daya tarik utama saat di-spill ke pembeli.
+- Hardware Logam Tebal & Resleting Halus: Pembeli sangat memperhatikan detail pengait strap dan kelancaran zipper sebagai indikator tas kualitas premium.
+- Bobot Tas Ringan (350g – 550g): Selain nyaman dipakai seharian oleh pelanggan, bobot ini juga membuat ongkir per kg bisa memuat hingga 2–3 pcs tas sekaligus.
+- Kelengkapan Tali Panjang & Dustbag: Tas dengan strap adjustable yang bisa dijadikan handbag sekaligus slingbag memiliki tingkat konversi pembelian 2x lebih tinggi.`,
+    updatedAt: '2025-05-08T10:15:00.000Z',
+  },
+];
+
+export function getLocalArticles(): BlogArticle[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_ARTICLES);
+    if (!raw) {
+      localStorage.setItem(
+        STORAGE_KEY_ARTICLES,
+        JSON.stringify(DEFAULT_BLOG_ARTICLES)
+      );
+      return DEFAULT_BLOG_ARTICLES;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_BLOG_ARTICLES;
+    return parsed;
+  } catch {
+    return DEFAULT_BLOG_ARTICLES;
+  }
+}
+
+export function saveLocalArticles(articles: BlogArticle[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_ARTICLES, JSON.stringify(articles));
+  } catch {
+    // ignore
+  }
+}
+
+export function resetLocalArticles(): BlogArticle[] {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_ARTICLES,
+      JSON.stringify(DEFAULT_BLOG_ARTICLES)
+    );
+  } catch {
+    // ignore
+  }
+  return DEFAULT_BLOG_ARTICLES;
+}
+
 export function saveAllLocalOrders(orders: OrderRecord[]): void {
   try {
     localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
@@ -670,7 +867,8 @@ export async function syncProductsToSupabase(
   products: Product[],
   uiConfig?: UiContentConfig,
   orders?: OrderRecord[],
-  reviews?: CustomerReview[]
+  reviews?: CustomerReview[],
+  articles?: BlogArticle[]
 ): Promise<{ ok: boolean; message: string }> {
   const url = config.supabaseUrl.trim().replace(/\/$/, '');
   const key = config.supabaseAnonKey.trim();
@@ -730,8 +928,9 @@ export async function syncProductsToSupabase(
 
     const localOrders = orders || getLocalOrders();
     const localReviews = reviews || getLocalReviews();
+    const localArticles = articles || getLocalArticles();
 
-    // Sync UI, Contact settings, Customer Reviews & Order Backup inside tgi_site_settings
+    // Sync UI, Contact settings, Customer Reviews, Articles & Order Backup inside tgi_site_settings
     const safeStoreMeta = {
       storeName: config.storeName,
       slogan: config.slogan,
@@ -761,6 +960,7 @@ export async function syncProductsToSupabase(
             storeConfig: safeStoreMeta,
             reviews: localReviews,
             ordersBackup: localOrders,
+            articles: localArticles,
             productExtraMeta: products.map((p) => ({
               id: p.id,
               stockStatus: p.stockStatus,
@@ -771,6 +971,33 @@ export async function syncProductsToSupabase(
         },
       ]),
     }).catch(() => {});
+
+    // Optional sync to dedicated tgi_articles table if created
+    if (localArticles.length > 0) {
+      await fetch(`${url}/rest/v1/tgi_articles`, {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify(
+          localArticles.map((art) => ({
+            id: art.id,
+            title: art.title,
+            category: art.category,
+            excerpt: art.excerpt,
+            content: art.content,
+            image_url: art.imageUrl,
+            published_at: art.publishedAt,
+            read_time: art.readTime || '4 Menit Baca',
+            author: art.author || 'Tim Edukasi TGI',
+            updated_at: art.updatedAt,
+          }))
+        ),
+      }).catch(() => {});
+    }
 
     // Optional sync to dedicated tgi_orders table if created
     if (localOrders.length > 0) {
@@ -801,7 +1028,7 @@ export async function syncProductsToSupabase(
 
     return {
       ok: true,
-      message: `Berhasil sinkronisasi ${products.length} produk, ${localReviews.length} ulasan reseller, ${localOrders.length} riwayat pesanan WA & pengaturan toko ke Cloud Supabase!`,
+      message: `Berhasil sinkronisasi ${products.length} produk, ${localArticles.length} artikel blog, ${localReviews.length} ulasan reseller & pengaturan toko ke Cloud Supabase!`,
     };
   } catch (err) {
     return {
@@ -848,6 +1075,7 @@ export async function fetchCloudBackupFromSupabase(
   storeConfig?: Partial<StoreConfig>;
   reviews?: CustomerReview[];
   orders?: OrderRecord[];
+  articles?: BlogArticle[];
 }> {
   const url = config.supabaseUrl.trim().replace(/\/$/, '');
   const key = config.supabaseAnonKey.trim();
@@ -942,6 +1170,9 @@ export async function fetchCloudBackupFromSupabase(
       orders: Array.isArray(configBlob.ordersBackup)
         ? configBlob.ordersBackup
         : [],
+      articles: Array.isArray(configBlob.articles)
+        ? configBlob.articles
+        : undefined,
     };
   } catch (err) {
     return {
@@ -996,9 +1227,23 @@ create table if not exists public.tgi_orders (
   created_at timestamptz default now()
 );
 
+create table if not exists public.tgi_articles (
+  id text primary key,
+  title text not null,
+  category text default 'Strategi Bisnis',
+  excerpt text default '',
+  content text default '',
+  image_url text default '',
+  published_at text default '',
+  read_time text default '4 Menit Baca',
+  author text default 'Tim Edukasi TGI',
+  updated_at timestamptz default now()
+);
+
 alter table public.tgi_products enable row level security;
 alter table public.tgi_site_settings enable row level security;
 alter table public.tgi_orders enable row level security;
+alter table public.tgi_articles enable row level security;
 
 create policy "Allow public read access on tgi_products"
   on public.tgi_products for select using (true);
@@ -1016,4 +1261,10 @@ create policy "Allow public read access on tgi_orders"
   on public.tgi_orders for select using (true);
 
 create policy "Allow anon write access on tgi_orders"
-  on public.tgi_orders for all using (true) with check (true);`;
+  on public.tgi_orders for all using (true) with check (true);
+
+create policy "Allow public read access on tgi_articles"
+  on public.tgi_articles for select using (true);
+
+create policy "Allow anon write access on tgi_articles"
+  on public.tgi_articles for all using (true) with check (true);`;

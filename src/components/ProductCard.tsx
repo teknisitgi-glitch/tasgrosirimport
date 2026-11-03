@@ -11,6 +11,11 @@ import {
   Scale,
   Save,
   SlidersHorizontal,
+  ShieldCheck,
+  PackageCheck,
+  Flame,
+  AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import {
   Product,
@@ -32,6 +37,7 @@ import {
 interface ProductCardProps {
   product: Product;
   isAdminMode: boolean;
+  availableCategories?: string[];
   imageAspectRatio?: ProductImageAspectRatio;
   imageObjectFit?: ProductImageObjectFit;
   isWishlisted?: boolean;
@@ -53,6 +59,7 @@ const CARD_EDITABLE_CATEGORIES: Exclude<ProductCategory, 'Semua'>[] = [
 export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   isAdminMode,
+  availableCategories,
   imageAspectRatio = '1:1',
   imageObjectFit = 'contain',
   isWishlisted = false,
@@ -260,7 +267,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           onQuickView(product);
         }
       }}
-      className="group relative bg-white border border-zinc-200/80 hover:border-zinc-950 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer"
+      className="group relative rounded-2xl bg-white border border-zinc-200/80 hover:border-zinc-300 shadow-xs hover:shadow-xl hover:shadow-zinc-900/10 hover:-translate-y-1 transition-all duration-300 ease-out flex flex-col overflow-hidden cursor-pointer"
     >
       {/* Inline Quick Edit Overlay (When Admin clicks Edit Cepat on Card) */}
       {isAdminMode && isInlineEditing && (
@@ -321,7 +328,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 }
                 className="w-full px-2 py-1 text-xs font-semibold rounded bg-zinc-900 border border-zinc-700 text-white focus:border-amber-400 focus:outline-none"
               >
-                {CARD_EDITABLE_CATEGORIES.map((cat) => (
+                {Array.from(
+                  new Set([
+                    ...(availableCategories && availableCategories.length > 0
+                      ? availableCategories
+                      : CARD_EDITABLE_CATEGORIES),
+                    product.category,
+                  ])
+                ).map((cat) => (
                   <option key={cat} value={cat}>
                     {cat}
                   </option>
@@ -444,26 +458,38 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           alt={`${product.name} (${product.sku}) - ${activeColor}`}
           referrerPolicy="no-referrer"
           onError={() => setImgError(true)}
-          className={`w-full h-full ${fitClass} group-hover:scale-105 transition-transform duration-300 ease-out`}
+          className={`w-full h-full ${fitClass} group-hover:scale-108 transition-transform duration-500 ease-out`}
         />
 
-        {/* Top-Left: Elegant Discount Badge & Editorial Status Tag */}
+        {/* Top-Left: Eye-Friendly Credibility & Warehouse Status Badges */}
         <div className="absolute top-3 left-3 z-10 flex flex-col items-start gap-1.5 pointer-events-none">
-          {(product.isSale || discountPercent > 0) && (
-            <span className="bg-rose-600 text-white font-mono text-[11px] font-bold px-2.5 py-0.5 tracking-wider uppercase shadow-2xs">
-              {discountPercent > 0 ? `-${discountPercent}%` : 'SALE'}
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900/90 backdrop-blur-md text-amber-300 border border-amber-400/35 font-sans text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 shadow-sm">
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Import Original</span>
+          </span>
+
+          {resolvedStockStatus === 'Habis' ? (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-rose-50/95 backdrop-blur-md text-rose-800 border border-rose-200 font-sans text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 shadow-sm">
+              <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
+              <span>Stok Gudang Habis</span>
+            </span>
+          ) : isLowStock ? (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50/95 backdrop-blur-md text-amber-900 border border-amber-300 font-mono text-[10px] font-extrabold px-2.5 py-1 tracking-tight shadow-sm">
+              <Flame className="w-3 h-3 text-amber-500 fill-amber-400 shrink-0 animate-pulse" />
+              <span>Sisa {lowStockCount} pcs di Gudang</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50/95 backdrop-blur-md text-emerald-800 border border-emerald-200/90 font-sans text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <PackageCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Ready Stock Gudang</span>
             </span>
           )}
 
           {isBestSeller && (
-            <span className="bg-zinc-950 text-white font-sans text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5">
-              Best Seller
-            </span>
-          )}
-
-          {isLowStock && resolvedStockStatus !== 'Habis' && (
-            <span className="bg-amber-400 text-zinc-950 font-mono text-[10px] font-extrabold px-2 py-0.5 tracking-tight">
-              Sisa {lowStockCount} pcs
+            <span className="inline-flex items-center gap-1 rounded-lg bg-white/95 backdrop-blur-md text-zinc-900 border border-zinc-200 font-sans text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-0.5 shadow-sm">
+              <Sparkles className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+              <span>Best Seller</span>
             </span>
           )}
         </div>
@@ -532,32 +558,32 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 : `Simpan ${product.name} ke Wishlist`
             }
             title={isWishlisted ? 'Tersimpan di Wishlist' : 'Tambah ke Wishlist'}
-            className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all duration-150 cursor-pointer shadow-2xs ${
+            className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all duration-200 active:scale-90 cursor-pointer shadow-xs ${
               isWishlisted
                 ? 'bg-rose-50 border-rose-200 text-rose-600 scale-105'
-                : 'bg-white/95 hover:bg-white border-zinc-200/90 text-zinc-700 hover:text-rose-600'
+                : 'bg-white/95 hover:bg-white border-zinc-200/90 text-zinc-700 hover:text-rose-600 hover:scale-105'
             }`}
           >
             <Heart
-              className={`w-4 h-4 transition-transform ${
+              className={`w-4 h-4 transition-transform duration-200 ${
                 isWishlisted ? 'fill-rose-600 text-rose-600 scale-110' : ''
               }`}
             />
           </button>
         </div>
 
-        {/* Smooth Hover Reveal Action Bar: Quick View + Add to Cart (Zalora Style) */}
+        {/* Smooth Hover Reveal Action Bar: Quick View + Add to Cart */}
         <div
           onClick={(e) => e.stopPropagation()}
-          className="opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 focus-within:opacity-100 focus-within:translate-y-0 transition-all duration-200 ease-out absolute inset-x-3 bottom-3 z-20 flex items-center gap-1.5"
+          className="opacity-0 translate-y-2.5 group-hover:opacity-100 group-hover:translate-y-0 focus-within:opacity-100 focus-within:translate-y-0 transition-all duration-300 ease-out absolute inset-x-3 bottom-3 z-20 flex items-center gap-1.5"
         >
           <button
             type="button"
             onClick={() => onQuickView(product)}
             aria-label={`Quick View ${product.name}`}
-            className="flex-1 py-2.5 px-3 bg-white/95 hover:bg-zinc-100 text-zinc-950 border border-zinc-300 shadow-md backdrop-blur-xs text-[11px] font-extrabold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+            className="flex-1 py-2.5 px-3 rounded-xl bg-white/95 hover:bg-zinc-100 text-zinc-950 border border-zinc-200/90 shadow-md backdrop-blur-xs text-[11px] font-extrabold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 whitespace-nowrap cursor-pointer"
           >
-            <Eye className="w-3.5 h-3.5 shrink-0" />
+            <Eye className="w-3.5 h-3.5 shrink-0 text-zinc-700" />
             <span>Quick View</span>
           </button>
 
@@ -566,11 +592,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             onClick={handleAddClick}
             disabled={resolvedStockStatus === 'Habis'}
             aria-label={`Tambah ${product.name} ke Keranjang`}
-            className={`flex-1 py-2.5 px-3 shadow-md text-[11px] font-extrabold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+            className={`flex-1 py-2.5 px-3 rounded-xl shadow-md text-[11px] font-extrabold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 whitespace-nowrap cursor-pointer ${
               resolvedStockStatus === 'Habis'
                 ? 'bg-zinc-300 text-zinc-500 cursor-not-allowed'
                 : justAdded
-                ? 'bg-emerald-600 text-white'
+                ? 'bg-emerald-600 text-white scale-[1.02]'
                 : 'bg-zinc-950 hover:bg-zinc-800 text-white'
             }`}
           >
@@ -579,7 +605,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             ) : justAdded ? (
               <>
                 <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Tersimpan</span>
+                <span>Tersimpan!</span>
               </>
             ) : (
               <>
@@ -664,67 +690,56 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <div className="flex items-center gap-1.5 shrink-0">
               <span
                 title="Estimasi berat per tas untuk kalkulator ongkir kargo"
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-600 font-mono text-[10px]"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50/90 text-sky-800 border border-sky-200/80 font-mono text-[10px] font-semibold"
               >
-                <Scale className="w-2.5 h-2.5 text-zinc-500" />
+                <Scale className="w-2.5 h-2.5 text-sky-600" />
                 <span>{product.weightGrams || 400}g</span>
               </span>
               <span
-                className={`text-[11px] font-medium ${
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors ${
                   resolvedStockStatus === 'Habis'
-                    ? 'text-rose-600 font-semibold'
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
                     : isLowStock
-                    ? 'text-amber-700 font-semibold'
-                    : 'text-emerald-700'
+                    ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                    : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                 }`}
               >
-                {resolvedStockStatus}
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    resolvedStockStatus === 'Habis'
+                      ? 'bg-rose-500'
+                      : isLowStock
+                      ? 'bg-amber-500 animate-pulse'
+                      : 'bg-emerald-500'
+                  }`}
+                />
+                <span>
+                  {resolvedStockStatus === 'Ready Stock'
+                    ? 'Ready Stock Gudang'
+                    : resolvedStockStatus}
+                </span>
               </span>
             </div>
           </div>
         </div>
 
-        {/* Pricing Block with Strong Price Emphasis & Mobile Add Button */}
+        {/* Pricing Block with Single Clean Normal/Retail Price & Wholesale Note */}
         <div className="pt-2.5 border-t border-zinc-100 space-y-2">
-          <div>
-            {/* Sale Price (Strong Emphasis) & Strikethrough Normal Price */}
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span
-                className={`font-mono text-base font-extrabold tabular-nums ${
-                  discountPercent > 0 ? 'text-rose-600' : 'text-zinc-950'
-                }`}
-              >
+          <div className="space-y-1">
+            {/* Single Clean Normal/Retail Price */}
+            <div className="flex items-baseline justify-between gap-2 flex-wrap">
+              <span className="font-mono text-base font-extrabold text-zinc-950 tabular-nums">
                 {formatRupiah(product.salePrice)}
               </span>
-              {product.normalPrice > product.salePrice && (
-                <span className="font-mono text-xs text-zinc-400 line-through tabular-nums">
-                  {formatRupiah(product.normalPrice)}
-                </span>
-              )}
+              <span className="text-[10px] font-mono font-semibold text-zinc-500">
+                Harga Satuan / Pcs
+              </span>
             </div>
 
-            {/* Wholesale Tier Price & Savings */}
-            <div className="flex items-center justify-between gap-1 mt-1 text-xs">
-              <p className="text-zinc-600 tabular-nums">
-                Grosir ≥{product.wholesaleMinQty} pcs:{' '}
-                <span className="font-mono font-bold text-zinc-950">
-                  {formatRupiah(product.wholesalePrice)}
-                </span>
-              </p>
-
-              {(() => {
-                const hematNominal =
-                  product.salePrice > product.wholesalePrice
-                    ? product.salePrice - product.wholesalePrice
-                    : Math.max(0, product.normalPrice - product.wholesalePrice);
-                if (hematNominal <= 0) return null;
-                return (
-                  <span className="text-[10px] font-mono font-bold text-emerald-700 tabular-nums">
-                    Hemat {formatRupiah(hematNominal)}
-                  </span>
-                );
-              })()}
-            </div>
+            {/* Wholesale Inquiry Note */}
+            <p className="text-[10px] text-zinc-500 leading-snug italic">
+              *Untuk pemesanan partai besar / grosir, silakan langsung chat Admin Sales kami via WhatsApp
+            </p>
           </div>
 
           {/* Mobile / Touch Quick Add Button (Always accessible on touch screens) */}
@@ -732,12 +747,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             type="button"
             onClick={handleAddClick}
             disabled={resolvedStockStatus === 'Habis'}
-            className={`lg:hidden w-full py-2 px-3 text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+            className={`lg:hidden w-full py-2.5 px-3 rounded-xl text-xs font-bold uppercase tracking-wider inline-flex items-center justify-center gap-1.5 transition-all duration-200 active:scale-95 whitespace-nowrap cursor-pointer ${
               resolvedStockStatus === 'Habis'
                 ? 'bg-zinc-200 text-zinc-500 cursor-not-allowed'
                 : justAdded
                 ? 'bg-emerald-600 text-white'
-                : 'bg-zinc-950 hover:bg-zinc-800 text-white'
+                : 'bg-zinc-950 hover:bg-zinc-800 text-white shadow-xs'
             }`}
           >
             {resolvedStockStatus === 'Habis' ? (
